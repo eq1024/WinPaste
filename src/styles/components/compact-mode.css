@@ -2,7 +2,7 @@
 
 /* Base Item Styles */
 .history-item.compact {
-    padding: 2px 4px 2px 10px !important;
+    padding: 2px 10px 2px 10px !important;
     min-height: auto;
     height: 100% !important;
     display: flex;

@@ -245,7 +245,8 @@ pub fn start_input_worker(app_handle: AppHandle, mut rx: tokio::sync::mpsc::Unbo
 
                                             if is_outside {
                                                 if WINDOW_PINNED.load(Ordering::Relaxed) {
-                                                    let _ = window.set_focusable(false);
+                                                    // In pinned mode, don't hide, but we can release focus
+                                                    // However, DON'T set focusable(false) as it prevents clicking back to focus
                                                 } else {
                                                     let _ = hide_window_cmd(app_handle.clone());
                                                 }
@@ -300,7 +301,15 @@ pub unsafe extern "system" fn keyboard_proc(n_code: i32, w_param: WPARAM, l_para
                 let ctrl_down = (GetAsyncKeyState(VK_CONTROL.0 as i32) as u16 & 0x8000) != 0;
                 let alt_down = (GetAsyncKeyState(VK_MENU.0 as i32) as u16 & 0x8000) != 0;
                 let win_down = (GetAsyncKeyState(VK_LWIN.0 as i32) as u16 & 0x8000 != 0) || (GetAsyncKeyState(VK_RWIN.0 as i32) as u16 & 0x8000 != 0);
+                
                 if !ctrl_down && !alt_down && !win_down {
+                    // 当窗口固定置顶时，如果窗口没有聚焦且没有进入显式导航模式，不拦截按键，允许操作其他软件
+                    if WINDOW_PINNED.load(Ordering::Relaxed) && 
+                       !IS_MAIN_WINDOW_FOCUSED.load(Ordering::Relaxed) &&
+                       !NAVIGATION_MODE_ACTIVE.load(Ordering::Relaxed) {
+                        return CallNextHookEx(None, n_code, w_param, l_param);
+                    }
+
                     // Block these keys so the background worker can handle them without system interference
                     return LRESULT(1);
                 }

@@ -1,8 +1,8 @@
 [package]
 name = "winpaste-app"
-version = "0.0.1"
+version = "1.0.2"
 description = "A Tauri App"
-authors = ["you"]
+authors = ["eq1024"]
 edition = "2021"
 default-run = "winpaste-app"
 

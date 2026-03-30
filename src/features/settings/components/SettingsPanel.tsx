@@ -204,7 +204,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
             .then(v => setAppVersion(v))
             .catch(err => {
                 console.error("Failed to get version:", err);
-                setAppVersion("0.0.1");
+                setAppVersion("1.0.0");
             });
 
     }, []);

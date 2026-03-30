@@ -38,7 +38,7 @@ export const useAppActions = ({
   const handleResetSettings = () => {
     openConfirm({
       title: t('reset_settings'),
-      message: t('reset_settings_confirm'),
+      message: '',
       onConfirm: async () => {
         try {
           await invoke("reset_settings");

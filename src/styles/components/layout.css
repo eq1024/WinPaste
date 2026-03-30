@@ -157,12 +157,19 @@ select.search-input option {
   box-shadow: var(--shadow-lg) !important;
 }
 
-.virtual-list-wrapper .virtuoso-scroller {
-  width: calc(100% + var(--scrollbar-overlay-width, 10px));
-  margin-right: calc(var(--scrollbar-overlay-width, 10px) * -1);
-  padding: 0 8px;
-  box-sizing: border-box;
-  overflow-x: hidden;
+.virtual-list-wrapper [data-virtuoso-scroller="true"] {
+  width: 100% !important;
+  padding: 0 6px !important; /* 对齐 header 的 16px 边距 */
+  box-sizing: border-box !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  /* 隐藏滚动条但保留滚动功能 - 为了保持列表在项目多时依然居中 */
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+.virtual-list-wrapper [data-virtuoso-scroller="true"]::-webkit-scrollbar {
+  display: none !important;
 }
 
 .history-item {
@@ -179,7 +186,7 @@ select.search-input option {
     border-color 0.15s ease,
     box-shadow 0.15s ease,
     transform 0.15s ease;
-  margin: 0 10px 6px 10px;
+  margin: 0 0 6px 0; /* 移除左右外边距，改用容器内边距 */
   height: 100%;
   overflow: visible;
   display: flex;
