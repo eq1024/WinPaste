@@ -16,7 +16,7 @@ export const useSettingsInit = () => {
     let disposed = false;
 
     try {
-      const storedCompactMode = localStorage.getItem('tiez_compact_mode');
+      const storedCompactMode = localStorage.getItem('winpaste_compact_mode');
       if (storedCompactMode && !disposed) {
         setCompactMode(storedCompactMode === 'true');
       }
@@ -30,7 +30,7 @@ export const useSettingsInit = () => {
         if (res["app.hotkey"]) setHotkey(res["app.hotkey"]);
         if (res["app.compact_mode"]) {
             setCompactMode(res["app.compact_mode"] === 'true');
-            try { localStorage.setItem('tiez_compact_mode', res["app.compact_mode"]); } catch(e) {}
+            try { localStorage.setItem('winpaste_compact_mode', res["app.compact_mode"]); } catch(e) {}
         }
         if (res["app.color_mode"]) {
           setColorMode(res["app.color_mode"] as 'dark' | 'light' | 'system');
