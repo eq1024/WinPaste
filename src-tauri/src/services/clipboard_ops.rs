@@ -157,74 +157,118 @@ pub async fn copy_to_clipboard(
 }
 
 async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle) -> AppResult<()> {
-    // 1. Only restore focus if our window actually took focus; avoids unnecessary focus flips
-    // that can force fullscreen apps into windowed mode.
-    if crate::IS_MAIN_WINDOW_FOCUSED.load(Ordering::Relaxed) {
-        let _ = restore_focus_before_paste(app_handle).await;
-    }
+    let was_focused = crate::IS_MAIN_WINDOW_FOCUSED.load(Ordering::Relaxed);
 
-    // 2. Then handle the specific visibility logic based on pinned state
+    // 1. 先把自己变成不会抢夺焦点的幽灵状态（或直接隐藏）
     if crate::WINDOW_PINNED.load(Ordering::Relaxed) {
-        // In pinned mode, stay visible but ensure window does NOT have focus
+        // 在置顶模式下，恢复为悬浮面板状态
         if let Some(window) = app_handle.get_webview_window("main") {
-            // Make sure the window doesn't steal focus back
-            let _ = window.set_focusable(false);
+            #[cfg(target_os = "windows")]
+            if let Ok(hwnd_raw) = window.hwnd() {
+                unsafe {
+                    let ex_style = windows::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(windows::Win32::Foundation::HWND(hwnd_raw.0), windows::Win32::UI::WindowsAndMessaging::GWL_EXSTYLE);
+                    let _ = windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrW(
+                        windows::Win32::Foundation::HWND(hwnd_raw.0),
+                        windows::Win32::UI::WindowsAndMessaging::GWL_EXSTYLE,
+                        ex_style | windows::Win32::UI::WindowsAndMessaging::WS_EX_NOACTIVATE.0 as isize
+                    );
+                }
+            }
+            // 不要调用 window.set_focusable(false)，因为它在某些 Tauri 平台上会导致窗口闪烁并强制触发焦点事件
         }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        crate::IS_MAIN_WINDOW_FOCUSED.store(false, Ordering::Relaxed); // 自己退居二线
     } else {
-        // In auto-hide mode, hide the window now
+        // 在非置顶模式下，直接隐藏窗口
         if let Some(window) = app_handle.get_webview_window("main") {
             let _ = window.hide();
             crate::IS_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
             crate::app::window_manager::release_win_keys();
         }
-        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        crate::IS_MAIN_WINDOW_FOCUSED.store(false, Ordering::Relaxed);
     }
+    
+    // 给系统留出极短的时间响应窗口样式的变化
+    tokio::time::sleep(std::time::Duration::from_millis(15)).await;
+
+    // 2. 然后，如果之前我们拥有焦点，再郑重其事地把焦点交还给那个精准快照保存的目标窗口
+    if was_focused {
+        let _ = restore_focus_before_paste(app_handle).await;
+    }
+
     Ok(())
 }
 
 async fn restore_focus_before_paste(_app_handle: &tauri::AppHandle) -> AppResult<()> {
     let last_hwnd_val = crate::LAST_ACTIVE_HWND.load(Ordering::Relaxed);
+    println!("[DEBUG] restore_focus_before_paste called. Target HWND = {:?}", last_hwnd_val);
+    
     if last_hwnd_val == 0 {
         return Err(AppError::Internal("No last active window captured".to_string()));
     }
 
-    let target_hwnd = HWND(last_hwnd_val as _);
     #[cfg(target_os = "windows")]
     {
         use crate::infrastructure::windows_ext::WindowExt;
         
+        let target_hwnd = HWND(last_hwnd_val as _);
         unsafe {
             if !IsWindowVisible(target_hwnd).as_bool() {
+                 println!("[WARN] Target window is no longer visible.");
                  return Err(AppError::Internal("Target window is no longer visible".to_string()));
             }
 
             let fg_hwnd = GetForegroundWindow();
+            println!("[DEBUG] Before SetForegroundWindow, Current Foreground is {:?}", fg_hwnd.0 as usize);
+            
             if fg_hwnd.0 != target_hwnd.0 {
+                use windows::Win32::UI::Input::KeyboardAndMouse::{keybd_event, KEYEVENTF_KEYUP};
+                
+                // 1. 发送一次虚拟的 Alt 键按下来绕过 ForegroundLockTimeout 限制
+                keybd_event(windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU.0 as u8, 0, windows::Win32::UI::Input::KeyboardAndMouse::KEYBD_EVENT_FLAGS(0), 0);
+                keybd_event(windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU.0 as u8, 0, KEYEVENTF_KEYUP, 0);
+
+                // 2. 将当前 Tokio 后台工作线程与前台线程进行输入附加，赋予当前线程前台特权
+                let current_thread_id = windows::Win32::System::Threading::GetCurrentThreadId();
                 let fg_thread_id = GetWindowThreadProcessId(fg_hwnd, None);
                 let target_thread_id = GetWindowThreadProcessId(target_hwnd, None);
 
-                if fg_thread_id != 0 && target_thread_id != 0 && fg_thread_id != target_thread_id {
-                    let _ = AttachThreadInput(fg_thread_id, target_thread_id, true);
-                    let _ = SetForegroundWindow(target_hwnd);
-                    if IsIconic(target_hwnd).as_bool() {
-                        let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(target_hwnd, windows::Win32::UI::WindowsAndMessaging::SW_RESTORE);
-                    }
-                    let _ = windows::Win32::UI::WindowsAndMessaging::BringWindowToTop(target_hwnd);
-                    let _ = AttachThreadInput(fg_thread_id, target_thread_id, false);
-                } else {
-                    let _ = SetForegroundWindow(target_hwnd);
-                    if IsIconic(target_hwnd).as_bool() {
-                        let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(target_hwnd, windows::Win32::UI::WindowsAndMessaging::SW_RESTORE);
-                    }
-                    let _ = windows::Win32::UI::WindowsAndMessaging::BringWindowToTop(target_hwnd);
+                let attached_to_fg = if current_thread_id != fg_thread_id && fg_thread_id != 0 {
+                    windows::Win32::System::Threading::AttachThreadInput(current_thread_id, fg_thread_id, true).as_bool()
+                } else { false };
+
+                let attached_to_target = if fg_thread_id != target_thread_id && target_thread_id != 0 {
+                    windows::Win32::System::Threading::AttachThreadInput(fg_thread_id, target_thread_id, true).as_bool()
+                } else { false };
+
+                let _ = SetForegroundWindow(target_hwnd);
+                
+                if IsIconic(target_hwnd).as_bool() {
+                    let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(target_hwnd, windows::Win32::UI::WindowsAndMessaging::SW_RESTORE);
                 }
+                let _ = windows::Win32::UI::WindowsAndMessaging::BringWindowToTop(target_hwnd);
+                
+                if attached_to_target {
+                    let _ = windows::Win32::System::Threading::AttachThreadInput(fg_thread_id, target_thread_id, false);
+                }
+                if attached_to_fg {
+                    let _ = windows::Win32::System::Threading::AttachThreadInput(current_thread_id, fg_thread_id, false);
+                }
+                
+                println!("[DEBUG] Tried to set foreground. Attached to FG: {}, Attached to Target: {}", attached_to_fg, attached_to_target);
+            } else {
+                println!("[DEBUG] Target window is already the foreground window.");
             }
         }
 
         // Wait for focus with polling instead of blind sleep
+        println!("[DEBUG] Waiting for focus to settle on target window {:?}...", target_hwnd.0 as usize);
         if !WindowExt::wait_for_focus_raw(target_hwnd.0 as usize, 300).await {
-            println!("[WARN] Failed to confirm focus on target window after 300ms");
+            unsafe {
+                let current_fg = GetForegroundWindow();
+                println!("[WARN] Failed to confirm focus on target window after 300ms. Current Foreground is actually {:?}", current_fg.0 as usize);
+            }
+        } else {
+            println!("[DEBUG] Successfully confirmed target window is foreground!");
         }
     }
 
@@ -565,11 +609,19 @@ async fn perform_paste_action(
         let _ = restore_focus_before_paste(app_handle).await;
     }
 
+    #[cfg(target_os = "windows")]
+    unsafe {
+        let fg_before_paste = windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow();
+        println!("[DEBUG] Right before sending paste keystroke, Foreground Window is {:?}", fg_before_paste.0 as usize);
+    }
+
     // Get paste method from settings
     let paste_method = state.settings_repo.get("app.paste_method").ok().flatten().unwrap_or_else(|| "shift_insert".to_string());
 
     // Send paste keystroke
+    println!("[DEBUG] Calling send_paste_keystroke...");
     send_paste_keystroke(&paste_method, content, Some(content_type));
+    println!("[DEBUG] Finished sending keystrokes.");
 
     // Hide after paste if not pinned
     hide_window_after_paste(app_handle).await;
@@ -585,11 +637,7 @@ async fn perform_paste_action(
 
 async fn hide_window_after_paste(app_handle: &tauri::AppHandle) {
     if crate::WINDOW_PINNED.load(Ordering::Relaxed) {
-        // In pinned mode, keep window non-focusable and restore focus back to last app
-        if let Some(window) = app_handle.get_webview_window("main") {
-            let _ = window.set_focusable(false);
-        }
-        let _ = restore_focus_before_paste(app_handle).await;
+        // 在置顶模式下，焦点已经在粘贴前完美归还了，在此处坚决不应再做任何焦点操作，否则会打断目标窗口的粘贴处理
         return;
     }
 

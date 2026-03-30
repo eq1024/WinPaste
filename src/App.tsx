@@ -501,19 +501,7 @@ const App = () => {
   });
 
   return (
-    <div 
-      className="app-container"
-      onMouseDown={(e) => {
-        // 当窗口固定置顶时，点击任何地方（非交互元素）都尝试获取聚焦，以便响应快捷键和 ESC
-        if (uiState.isWindowPinned) {
-          const target = e.target as HTMLElement;
-          // 避免点击剪贴板项目本身时也抢走焦点，导致粘贴时焦点丢失
-          if (!target.closest('button, input, select, textarea, .history-item')) {
-            invoke("activate_window_focus").catch(console.error);
-          }
-        }
-      }}
-    >
+    <div className="app-container">
       <AppHeader
         t={t}
         searchInputRef={searchInputRef}

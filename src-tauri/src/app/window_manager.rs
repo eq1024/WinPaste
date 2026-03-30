@@ -92,7 +92,6 @@ pub fn toggle_window(app: &AppHandle) {
 
         IS_HIDDEN.store(false, Ordering::Relaxed);
         NAVIGATION_ENABLED.store(true, Ordering::SeqCst);
-        NAVIGATION_MODE_ACTIVE.store(true, Ordering::SeqCst); // 唤起时自动进入导航模式以便接受上下键和ESC
         let was_docked = is_hidden_by_edge;
         let current_dock_val = CURRENT_DOCK.load(Ordering::Relaxed);
         CURRENT_DOCK.store(0, Ordering::Relaxed);
@@ -292,7 +291,7 @@ pub fn toggle_window(app: &AppHandle) {
 
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
         let _ = window.set_always_on_top(pinned);
-        let _ = window.set_focusable(false);
+        let _ = window.set_focusable(!pinned); // 如果不置顶，就允许聚焦
         let _ = app.emit("window-pinned-changed", pinned);
 
         #[cfg(target_os = "windows")]
@@ -300,16 +299,26 @@ pub fn toggle_window(app: &AppHandle) {
             if let Ok(hwnd_raw) = window.hwnd() {
                 unsafe {
                     let ex_style = GetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE);
-                    let _ = SetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE, ex_style | WS_EX_NOACTIVATE.0 as isize);
+                    if pinned {
+                        let _ = SetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE, ex_style | WS_EX_NOACTIVATE.0 as isize);
+                    } else {
+                        let _ = SetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE, ex_style & !(WS_EX_NOACTIVATE.0 as isize));
+                    }
                 }
                 let _ = window.show();
                 if pinned {
                     WindowExt::show_window_no_activate(HWND(hwnd_raw.0));
                 } else {
-                    WindowExt::show_window_no_activate_normal(HWND(hwnd_raw.0));
+                    crate::IS_MAIN_WINDOW_FOCUSED.store(true, Ordering::Relaxed);
+                    let _ = window.set_focus();
+                    WindowExt::force_focus_window(HWND(hwnd_raw.0));
                 }
             } else {
                 let _ = window.show();
+                if !pinned {
+                    crate::IS_MAIN_WINDOW_FOCUSED.store(true, Ordering::Relaxed);
+                    let _ = window.set_focus();
+                }
             }
         }
 
@@ -339,11 +348,22 @@ pub fn set_navigation_mode(active: bool) -> Result<(), String> {
 pub fn activate_window_focus(app_handle: AppHandle) -> Result<(), String> {
     if let Some(window) = app_handle.get_webview_window("main") {
         let _ = window.set_focusable(true);
+        crate::IS_MAIN_WINDOW_FOCUSED.store(true, std::sync::atomic::Ordering::Relaxed);
         
         #[cfg(windows)]
         {
             if let Ok(hwnd_raw) = window.hwnd() {
                 unsafe {
+                    // 在抢占焦点前，精准捕获并记录当前系统前台窗口（作为粘贴的目标）
+                    let fg_hwnd = windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow();
+                    println!("[DEBUG] activate_window_focus triggered. Current Foreground: {:?}, Our Window: {:?}", fg_hwnd.0 as usize, hwnd_raw.0 as usize);
+                    if !fg_hwnd.0.is_null() && fg_hwnd.0 != hwnd_raw.0 {
+                        crate::LAST_ACTIVE_HWND.store(fg_hwnd.0 as usize, std::sync::atomic::Ordering::Relaxed);
+                        println!("[DEBUG] LAST_ACTIVE_HWND successfully updated to: {:?}", fg_hwnd.0 as usize);
+                    } else {
+                        println!("[DEBUG] LAST_ACTIVE_HWND NOT updated. Is null? {} Or is same as our window? {}", fg_hwnd.0.is_null(), fg_hwnd.0 == hwnd_raw.0);
+                    }
+
                     let ex_style = GetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE);
                     let next = ex_style & !(WS_EX_NOACTIVATE.0 as isize);
                     let _ = SetWindowLongPtrW(HWND(hwnd_raw.0), GWL_EXSTYLE, next);
