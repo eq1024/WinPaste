@@ -1,0 +1,141 @@
+import type { ComponentProps } from "react";
+import SettingsPanel from "../components/SettingsPanel";
+import type { Locale } from "../../../shared/types";
+
+type SettingsPanelProps = ComponentProps<typeof SettingsPanel>;
+
+interface UseSettingsPanelPropsOptions {
+  t: (key: string) => string;
+  language: Locale;
+  hotkeyParts: string[];
+  checkHotkeyConflict: (newHotkey: string, mode: "main" | "sequential" | "rich" | "search") => boolean;
+  updateHotkey: (key: string) => void;
+  updateSequentialHotkey: (key: string) => void;
+  updateRichPasteHotkey: (key: string) => void;
+  updateSearchHotkey: (key: string) => void;
+  saveAppSetting: (key: string, val: string) => void;
+  handleResetSettings: () => void;
+  toggleGroup: (group: string) => void;
+  state: any;
+}
+
+export const useSettingsPanelProps = ({
+  t,
+  language,
+  hotkeyParts,
+  checkHotkeyConflict,
+  updateHotkey,
+  updateSequentialHotkey,
+  updateRichPasteHotkey,
+  updateSearchHotkey,
+  saveAppSetting,
+  handleResetSettings,
+  toggleGroup,
+  state
+}: UseSettingsPanelPropsOptions): SettingsPanelProps => {
+  return {
+    t,
+    language,
+    collapsedGroups: state.collapsedGroups,
+    autoStart: state.autoStart,
+    setAutoStart: state.setAutoStart,
+    silentStart: state.silentStart,
+    setSilentStart: state.setSilentStart,
+    persistent: state.persistent,
+    setPersistent: state.setPersistent,
+    persistentLimitEnabled: state.persistentLimitEnabled,
+    setPersistentLimitEnabled: state.setPersistentLimitEnabled,
+    persistentLimit: state.persistentLimit,
+    setPersistentLimit: state.setPersistentLimit,
+    deduplicate: state.deduplicate,
+    setDeduplicate: state.setDeduplicate,
+    captureFiles: state.captureFiles,
+    setCaptureFiles: state.setCaptureFiles,
+    captureRichText: state.captureRichText,
+    setCaptureRichText: state.setCaptureRichText,
+    richTextSnapshotPreview: state.richTextSnapshotPreview,
+    setRichTextSnapshotPreview: state.setRichTextSnapshotPreview,
+    deleteAfterPaste: state.deleteAfterPaste,
+    setDeleteAfterPaste: state.setDeleteAfterPaste,
+    moveToTopAfterPaste: state.moveToTopAfterPaste,
+    setMoveToTopAfterPaste: state.setMoveToTopAfterPaste,
+    sequentialMode: state.sequentialMode,
+    setSequentialModeState: state.setSequentialModeState,
+    sequentialHotkey: state.sequentialHotkey,
+    isRecordingSequential: state.isRecordingSequential,
+    setIsRecordingSequential: state.setIsRecordingSequential,
+    richPasteHotkey: state.richPasteHotkey,
+    isRecordingRich: state.isRecordingRich,
+    setIsRecordingRich: state.setIsRecordingRich,
+    searchHotkey: state.searchHotkey,
+    isRecordingSearch: state.isRecordingSearch,
+    setIsRecordingSearch: state.setIsRecordingSearch,
+    privacyProtection: state.privacyProtection,
+    setPrivacyProtection: state.setPrivacyProtection,
+    privacyProtectionKinds: state.privacyProtectionKinds,
+    setPrivacyProtectionKinds: state.setPrivacyProtectionKinds,
+    privacyProtectionCustomRules: state.privacyProtectionCustomRules,
+    setPrivacyProtectionCustomRules: state.setPrivacyProtectionCustomRules,
+    hotkey: state.hotkey,
+    showHotkeyHint: state.showHotkeyHint,
+    setShowHotkeyHint: state.setShowHotkeyHint,
+    winClipboardDisabled: state.winClipboardDisabled,
+    setWinClipboardDisabled: state.setWinClipboardDisabled,
+    registryWinVEnabled: state.registryWinVEnabled,
+    setRegistryWinVEnabled: state.setRegistryWinVEnabled,
+    showSearchBox: state.showSearchBox,
+    setShowSearchBox: state.setShowSearchBox,
+    scrollTopButtonEnabled: state.scrollTopButtonEnabled,
+    setScrollTopButtonEnabled: state.setScrollTopButtonEnabled,
+    arrowKeySelection: state.arrowKeySelection,
+    setArrowKeySelection: state.setArrowKeySelection,
+    vibrancyEnabled: state.vibrancyEnabled,
+    setVibrancyEnabled: state.setVibrancyEnabled,
+    soundEnabled: state.soundEnabled,
+    setSoundEnabled: state.setSoundEnabled,
+    soundVolume: state.soundVolume,
+    setSoundVolume: state.setSoundVolume,
+    pasteSoundEnabled: state.pasteSoundEnabled,
+    setPasteSoundEnabled: state.setPasteSoundEnabled,
+    pasteMethod: state.pasteMethod,
+    setPasteMethod: state.setPasteMethod,
+    hideTrayIcon: state.hideTrayIcon,
+    setHideTrayIcon: state.setHideTrayIcon,
+    edgeDocking: state.edgeDocking,
+    setEdgeDocking: state.setEdgeDocking,
+    followMouse: state.followMouse,
+    setFollowMouse: state.setFollowMouse,
+    installedApps: state.installedApps,
+    appSettings: state.appSettings || {},
+    defaultApps: state.defaultApps,
+    showAppSelector: state.showAppSelector,
+    setShowAppSelector: state.setShowAppSelector,
+    dataPath: state.dataPath,
+    setLanguage: state.setLanguage,
+    colorMode: state.colorMode,
+    setColorMode: state.setColorMode,
+    showAppBorder: state.showAppBorder,
+    setShowAppBorder: state.setShowAppBorder,
+    showSourceAppIcon: state.showSourceAppIcon,
+    setShowSourceAppIcon: state.setShowSourceAppIcon,
+    compactMode: state.compactMode,
+    setCompactMode: state.setCompactMode,
+    clipboardItemFontSize: state.clipboardItemFontSize,
+    setClipboardItemFontSize: state.setClipboardItemFontSize,
+    clipboardTagFontSize: state.clipboardTagFontSize,
+    setClipboardTagFontSize: state.setClipboardTagFontSize,
+    tagManagerEnabled: state.tagManagerEnabled,
+    setTagManagerEnabled: state.setTagManagerEnabled,
+    isRecording: state.isRecording,
+    setIsRecording: state.setIsRecording,
+    hotkeyParts,
+    toggleGroup,
+    saveAppSetting,
+    updateSequentialHotkey,
+    updateRichPasteHotkey,
+    updateSearchHotkey,
+    updateHotkey,
+    handleResetSettings,
+    checkHotkeyConflict,
+  };
+};

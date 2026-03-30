@@ -1,0 +1,104 @@
+/* Fluent Modal & Confirm Dialog Styles */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+  padding: 24px;
+}
+
+/* Base dialog container */
+.confirm-dialog, .modal-content {
+  background: rgba(35, 35, 35, 0.9);
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 32px 64px rgba(0, 0, 0, 0.5);
+  width: 100%;
+  max-width: 400px;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+.confirm-dialog-title, .modal-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.confirm-dialog-message {
+  font-size: 14px;
+  margin-bottom: 28px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.confirm-dialog-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.confirm-dialog-button {
+  padding: 6px 24px;
+  min-height: 32px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.1s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-transform: none;
+}
+
+/* Secondary Button (Cancel) */
+.confirm-dialog-button {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.confirm-dialog-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.confirm-dialog-button:active {
+  background: rgba(255, 255, 255, 0.04);
+  transform: scale(0.98);
+}
+
+/* Primary Button (Confirm) */
+.confirm-dialog-button.primary {
+  background: var(--accent-color);
+  color: #000000;
+  border: none;
+  font-weight: 600;
+}
+
+.confirm-dialog-button.primary:hover {
+  background: var(--accent-hover);
+}
+
+.confirm-dialog.theme-fluent {
+    /* Base styles apply, this is a marker class */
+}
+
+/* Selector styles */
+.selector-container {
+  margin-bottom: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.04);
+}

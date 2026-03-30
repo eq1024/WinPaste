@@ -1,0 +1,23 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Node / frontend
+node_modules/
+dist/
+
+# Tauri / Rust build outputs
+src-tauri/target/
+target-codex-*/
+
+# Runtime files
+*.db
+*.log
+*.tmp
+*.tsbuildinfo
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/

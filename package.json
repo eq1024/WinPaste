@@ -1,0 +1,53 @@
+{
+  "name": "winpaste",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "test:e2e": "playwright test",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "build:portable": "tauri build --no-bundle --features portable && powershell -NoProfile -Command \"$ErrorActionPreference='Stop'; $out='artifacts/portable'; New-Item -ItemType Directory -Force -Path $out | Out-Null; Get-ChildItem 'src-tauri/target/release' -Filter *.exe | Copy-Item -Destination $out -Force; Compress-Archive -Path (Join-Path $out '*') -DestinationPath (Join-Path $out 'winpaste-portable.zip') -Force\""
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-dialog": "^2.6.0",
+    "@tauri-apps/plugin-opener": "^2",
+    "@types/prismjs": "^1.26.5",
+    "@types/react-window": "^1.8.8",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "framer-motion": "^12.25.0",
+    "franc-min": "^6.2.0",
+    "lucide-react": "^0.562.0",
+    "prismjs": "^1.30.0",
+    "qrcode.react": "^4.2.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-select": "^5.10.2",
+    "react-virtuoso": "^4.18.1",
+    "react-window": "^1.8.10",
+    "tailwind-merge": "^3.4.0",
+    "use-resize-observer": "^9.1.0",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@types/react-select": "^5.0.0",
+    "@vitejs/plugin-react": "^4.6.0",
+    "playwright": "^1.40.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
+  },
+  "overrides": {
+    "react": "$react",
+    "react-dom": "$react-dom"
+  }
+}

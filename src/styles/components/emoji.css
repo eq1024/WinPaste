@@ -1,0 +1,330 @@
+/* Emoji Panel */
+.emoji-panel{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  padding: 8px 12px 12px 12px;
+}
+
+.emoji-tabs{
+  display: flex;
+  gap: 6px;
+}
+
+.emoji-tab{
+  flex: 1;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.emoji-tab.active{
+  background: var(--accent-color);
+  color: #fff;
+}
+
+.emoji-content{
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px;
+}
+
+.emoji-fav-header{
+  display: flex;
+  align-items: center;
+  justify-content: start;
+  gap: 10px;
+  padding: 2px 6px 0 2px;
+}
+
+.emoji-fav-header-text{
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.emoji-fav-title{
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  color: var(--text-primary);
+}
+
+.emoji-group{
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.emoji-group-title{
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom: 2px solid var(--border-dark);
+  padding-bottom: 4px;
+  color: var(--text-primary);
+}
+
+.emoji-grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+  gap: 6px;
+}
+
+.emoji-btn{
+  height: 32px;
+  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s;
+}
+
+.emoji-btn:hover{
+  transform: translate(-1px, -1px);
+  border-color: var(--border-dark);
+}
+
+.emoji-btn:active{
+  transform: translate(1px, 1px);
+}
+
+.emoji-empty{
+  font-size: 12px;
+  opacity: 0.7;
+  text-align: center;
+  padding: 16px 0;
+}
+
+.emoji-dropzone{
+  border: 2px dashed var(--border-dark);
+  background: var(--bg-panel);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  text-align: center;
+  box-shadow: inset 2px 2px 0 rgba(0, 0, 0, 0.1);
+}
+
+.emoji-dropzone.dragging{
+  border-color: var(--accent-color);
+  background: var(--bg-input);
+}
+
+.emoji-dropzone-title{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.emoji-add-btn{
+  gap: 6px;
+  font-size: 11px;
+  padding: 6px 10px;
+}
+
+.emoji-fav-grid{
+  --emoji-fav-cell: 74px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--emoji-fav-cell), var(--emoji-fav-cell)));
+  gap: 8px;
+  justify-content: center;
+  align-content: start;
+  align-items: start;
+  padding: 4px 0;
+}
+
+.emoji-content.dragging{
+  position: relative;
+}
+
+.emoji-content.dragging::after{
+  content: "拖拽图片到这里";
+  position: absolute;
+  inset: 4px;
+  border: 2px dashed var(--accent-color);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  pointer-events: none;
+}
+
+@media (prefers-color-scheme: dark){
+  :root:not(.light-mode) .emoji-content.dragging::after{
+    background: rgba(0, 0, 0, 0.35);
+    color: #fff;
+  }
+}
+
+:root.dark-mode .emoji-content.dragging::after,
+body.dark-mode .emoji-content.dragging::after{
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+}
+
+.emoji-fav-card{
+  position: relative;
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+  padding: 3px 3px 1px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  border-radius: 12px;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, border-color 0.1s ease;
+}
+
+.emoji-fav-card:hover{
+  transform: translateY(-2px);
+  border-color: var(--border-dark);
+}
+
+.emoji-fav-remove{
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 20px;
+  height: 20px;
+  padding: 2px;
+  z-index: 2;
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  transition: opacity 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+}
+
+.emoji-fav-card:hover .emoji-fav-remove,
+.emoji-fav-card[data-delete-visible="true"] .emoji-fav-remove{
+  opacity: 1;
+  pointer-events: auto;
+  background: rgba(0, 0, 0, 0.85);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+}
+
+.emoji-fav-preview{
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid var(--border-dark);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: none;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.emoji-fav-preview img{
+  max-width: 100%;
+  max-height: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: transparent;
+}
+
+.emoji-fav-add .emoji-fav-preview{
+  border: 2px dashed var(--border-dark);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.55));
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.emoji-fav-add .emoji-fav-preview:hover{
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.emoji-fav-add .emoji-fav-preview span{
+  display: inline;
+}
+
+@media (prefers-color-scheme: dark){
+  :root:not(.light-mode) .emoji-fav-add .emoji-fav-preview{
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+:root.dark-mode .emoji-fav-add .emoji-fav-preview,
+body.dark-mode .emoji-fav-add .emoji-fav-preview{
+  background: rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 520px){
+  .emoji-panel{
+    padding: 8px;
+  }
+
+  .emoji-fav-grid{
+    --emoji-fav-cell: 66px;
+    gap: 6px;
+  }
+}
+
+.emoji-fav-empty{
+  text-align: center;
+  padding: 14px 10px 18px;
+  border: 1px dashed var(--border-dark);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+
+.emoji-fav-tip{
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: center;
+  opacity: 0.9;
+}
+
+.emoji-empty-title{
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.emoji-empty-desc{
+  font-size: 11px;
+  opacity: 0.8;
+  max-width: 24ch;
+  line-height: 1.45;
+}

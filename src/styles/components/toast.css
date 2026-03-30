@@ -1,0 +1,30 @@
+/* Toast System - Fluent Glass Style */
+.toast-container {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast-item {
+  background: rgba(32, 32, 32, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--text-primary);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px 20px;
+  font-family: var(--font-main);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+  min-width: 180px;
+  text-align: center;
+  border-bottom: 2px solid var(--accent-color); /* Add a little accent line at bottom */
+}

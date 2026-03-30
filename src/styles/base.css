@@ -1,0 +1,271 @@
+/* Fluent Design Base Variables (Dark Theme Default) */
+
+:root {
+  --bg-body: #000000;
+  --bg-window: transparent;
+  --bg-content: transparent;
+  --bg-toolbar: rgba(20, 20, 20, 0.4);
+  --bg-panel: rgba(45, 45, 45, 0.4);
+  --bg-input: rgba(255, 255, 255, 0.06);
+  --bg-element: rgba(255, 255, 255, 0.05);
+  --bg-button: rgba(255, 255, 255, 0.08);
+
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.78);
+  --text-muted: rgba(255, 255, 255, 0.54);
+
+  --accent-color: #60cdff;
+  --accent-color-rgb: 96, 205, 255;
+  --accent-hover: #4cc2ff;
+  --border-dark: rgba(255, 255, 255, 0.15);
+  --border-light: rgba(255, 255, 255, 0.1);
+  --shadow-color: rgba(0, 0, 0, 0.5);
+
+  --line-soft: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.2);
+
+  /* Enhanced Fluent Elevation Shadows */
+  --shadow-xs: 0 2px 4px rgba(0, 0, 0, 0.14), 0 0 2px rgba(0, 0, 0, 0.12);
+  --shadow-sm: 0 4px 8px rgba(0, 0, 0, 0.2), 0 0 2px rgba(0, 0, 0, 0.15);
+  --shadow-md: 0 8px 16px rgba(0, 0, 0, 0.24), 0 0 4px rgba(0, 0, 0, 0.18);
+  --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.28), 0 0 6px rgba(0, 0, 0, 0.22);
+  --shadow-inset: inset 0 1px 1px rgba(255, 255, 255, 0.08);
+
+  --accent-soft: rgba(var(--accent-color-rgb), 0.15);
+
+  --radius-window: 8px;
+  --radius-panel: 8px;
+  --radius-card: 8px;
+  --radius-control: 4px;
+  --radius-pill: 9999px;
+
+  /* Switch / Toggle Variables - High Visibility */
+  --switch-track-background: rgba(255, 255, 255, 0.2);
+  --switch-track-active-background: var(--accent-color);
+  --switch-track-border: 1px solid rgba(255, 255, 255, 0.3);
+  --switch-track-active-border-color: var(--accent-color);
+  --switch-track-radius: 16px;
+  --switch-track-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  --switch-thumb-background: #ffffff;
+  --switch-thumb-border: 1px solid rgba(0, 0, 0, 0.2);
+  --switch-thumb-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+  --switch-thumb-size: 24px;
+  --switch-thumb-offset: 3px;
+  --switch-thumb-translate: 32px;
+
+  /* Panel / Group Variables */
+  --panel-border: 1px solid rgba(255, 255, 255, 0.1);
+  --panel-radius: 8px;
+  --panel-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --panel-header-background: rgba(255, 255, 255, 0.05);
+  --panel-header-border-color: rgba(255, 255, 255, 0.1);
+  --panel-divider-color: rgba(255, 255, 255, 0.1);
+
+  /* Keycap / Hotkey Variables */
+  --keycap-border: 1px solid rgba(255, 255, 255, 0.2);
+  --keycap-radius: 4px;
+  --keycap-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+  --keycap-active-shadow: 0 0 0 rgba(0, 0, 0, 0);
+  --keycap-active-transform: translateY(1px);
+
+  /* Segmented Control */
+  --segmented-border: 1px solid rgba(255, 255, 255, 0.15);
+  --segmented-radius: 6px;
+  --segmented-shadow: none;
+  --segment-radius: 4px;
+  --segment-font-weight: 600;
+  --segment-text-transform: none;
+  --segment-active-background: var(--accent-color);
+  --segment-active-color: #000000;
+  --segment-active-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+
+  --spacing-md: 16px;
+  --spacing-sm: 8px;
+  --surface-opacity-scale: 1;
+
+  --font-main: "Segoe UI Variable Text", "Segoe UI", "Inter", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", "Consolas", monospace;
+  --font-size-xs: 11px;
+  --font-size-sm: 12px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+
+  --clipboard-item-font-size: 13px;
+  --clipboard-tag-font-size: 10px;
+
+  --shell-background: transparent;
+  --shell-border: 1px solid rgba(255, 255, 255, 0.25);
+  --shell-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  --shell-radius: var(--radius-window);
+  --shell-backdrop-filter: none;
+
+  --toolbar-border: 1px solid var(--line-soft);
+  --toolbar-shadow: none;
+
+  --title-background: transparent;
+  --title-color: var(--text-primary);
+  --header-btn-color: var(--text-secondary);
+  --title-border: none;
+  --title-radius: 0;
+  --title-shadow: none;
+  --title-padding: 0;
+  --title-transform: none;
+  --title-letter-spacing: 0;
+  --title-font-size: 16px;
+  --title-font-weight: 600;
+  --title-font-family: var(--font-main);
+
+  --input-border: 1px solid var(--border-dark);
+  --input-radius: var(--radius-control);
+  --input-shadow: none;
+  --input-focus-border-color: var(--accent-color);
+  --input-focus-shadow: 0 0 0 2px var(--accent-soft);
+  --input-font-weight: 400;
+
+  --button-border: 1px solid var(--border-dark);
+  --button-radius: var(--radius-control);
+  --button-shadow: var(--shadow-xs);
+  --button-hover-border-color: var(--line-strong);
+  --button-hover-shadow: var(--shadow-sm);
+  --button-hover-transform: none;
+  --button-active-shadow: none;
+  --button-active-transform: scale(0.98);
+  --button-active-filled-background: var(--accent-color);
+  --button-active-filled-color: #000000;
+  --button-active-filled-border-color: var(--accent-color);
+  --button-active-filled-shadow: 0 4px 12px rgba(var(--accent-color-rgb), 0.3);
+  --button-text-transform: none;
+  --button-font-weight: 500;
+  --button-letter-spacing: 0;
+
+  --card-border: 1px solid rgba(255, 255, 255, 0.08);
+  --card-radius: var(--radius-card);
+  --card-shadow: var(--shadow-xs);
+  --card-hover-border-color: rgba(255, 255, 255, 0.15);
+  --card-hover-shadow: var(--shadow-sm);
+    --card-selected-background: rgba(var(--accent-color-rgb), 0.12);
+    --card-selected-border-color: var(--accent-color);
+    --card-selected-shadow: var(--shadow-md);
+    --card-selected-outline: 2px solid var(--accent-color);
+    --card-selected-outline-offset: -2px;
+  }
+
+.light-mode {
+  --bg-body: #ffffff;
+  --bg-window: transparent;
+  --bg-content: transparent;
+  --bg-toolbar: rgba(255, 255, 255, 0.1);
+  --bg-panel: rgba(255, 255, 255, 0.3);
+  --bg-input: rgba(0, 0, 0, 0.03);
+  --bg-element: rgba(0, 0, 0, 0.02);
+  --bg-button: rgba(255, 255, 255, 0.6);
+
+  --text-primary: #202020;
+  --text-secondary: #505050;
+  --text-muted: #707070;
+
+  --accent-color: #0078d4;
+  --accent-color-rgb: 0, 120, 212;
+  --accent-hover: #005a9e;
+  --border-dark: rgba(0, 0, 0, 0.08);
+  --border-light: rgba(0, 0, 0, 0.04);
+  --shadow-color: rgba(0, 0, 0, 0.1);
+
+  --line-soft: rgba(0, 0, 0, 0.05);
+  --line-strong: rgba(0, 0, 0, 0.1);
+
+  --switch-track-background: rgba(0, 0, 0, 0.1);
+  --panel-border: 1px solid rgba(0, 0, 0, 0.05);
+  --panel-header-background: rgba(0, 0, 0, 0.02);
+  --panel-header-border-color: rgba(0, 0, 0, 0.04);
+  --panel-divider-color: rgba(0, 0, 0, 0.04);
+
+  --card-border: 1px solid rgba(0, 0, 0, 0.04);
+  --card-hover-border-color: rgba(0, 0, 0, 0.08);
+  --shell-border: 1px solid rgba(0, 0, 0, 0.12);
+  --title-color: #202020;
+  --header-btn-color: #424242;
+}
+
+/* Base resets for Fluent look */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    color: var(--text-primary);
+    background: transparent;
+    user-select: none;
+    overflow: hidden;
+}
+
+#root {
+    height: 100vh;
+}
+
+.app-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    /* Base background for Mica to blend with */
+    background: rgba(25, 25, 25, 0.05);
+    color: var(--text-primary);
+    border: var(--shell-border);
+    border-radius: 0; /* Default to square for Windows 10 */
+    /* Optimized CSS shadow to avoid drag lag while fixing native black bars */
+    box-shadow: var(--shell-shadow);
+    overflow: hidden;
+    /* Soft top-light effect */
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 100%);
+}
+
+.light-mode .app-container {
+    background: rgba(243, 243, 243, 0.7);
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.3) 100%);
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+.dark-mode .app-container {
+    background: rgba(25, 25, 25, 0.05);
+}
+
+.windows-11 .app-container {
+    border-radius: var(--shell-radius);
+}
+
+.hide-app-border .app-container {
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.vibrancy-disabled .app-container {
+    background: var(--bg-body) !important; /* Use variable instead of hardcoded hex */
+    background-image: none !important;
+}
+
+.light-mode.vibrancy-disabled .app-container {
+    background: #f3f3f3 !important;
+}
+
+.dark-mode.vibrancy-disabled .app-container {
+    background: #1a1a1a !important;
+}
+
+/* Scrollbar Fluent style */
+::-webkit-scrollbar {
+    width: 4px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
+}

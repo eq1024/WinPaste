@@ -1,0 +1,84 @@
+/* Fluent Design Theme (Mica Alt / Acrylic inspired) */
+:root,
+body {
+  background-color: transparent !important;
+  
+  --surface-color-rgb: 32, 32, 32;
+  --surface-opacity-scale: 0.8;
+  
+  --bg-window: rgba(var(--surface-color-rgb), calc(0.85 * var(--surface-opacity-scale, 1)));
+  --bg-content: transparent;
+  --bg-toolbar: transparent;
+  --bg-panel: rgba(45, 45, 45, 0.4);
+  --bg-input: rgba(255, 255, 255, 0.06);
+  --bg-element: rgba(255, 255, 255, 0.04);
+  --bg-button: rgba(255, 255, 255, 0.08);
+
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.78);
+  --text-muted: rgba(255, 255, 255, 0.54);
+
+  --accent-color: #60cdff;
+  --accent-color-rgb: 96, 205, 255;
+  --accent-hover: #4cc2ff;
+
+  --line-soft: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.12);
+  
+  --shadow-xs: 0 4px 10px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 10px 22px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 18px 36px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.35);
+  
+  --shell-background: rgba(var(--surface-color-rgb), 0.7);
+  --shell-border: 1px solid rgba(255, 255, 255, 0.1);
+  --shell-shadow: 0 18px 48px rgba(0, 0, 0, 0.4);
+  --shell-radius: 8px;
+
+  --toolbar-border: 1px solid rgba(255, 255, 255, 0.08);
+
+  --input-border: 1px solid rgba(255, 255, 255, 0.12);
+  --input-radius: 4px;
+  --input-shadow: none;
+  --input-focus-shadow: 0 0 0 2px rgba(96, 205, 255, 0.4);
+
+  --button-border: 1px solid rgba(255, 255, 255, 0.08);
+  --button-radius: 4px;
+  --button-shadow: var(--shadow-xs);
+  
+  --card-border: 1px solid rgba(255, 255, 255, 0.08);
+  --card-radius: 8px;
+  --card-shadow: none;
+  --card-hover-bg: rgba(255, 255, 255, 0.04);
+  
+  --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --scrollbar-hover: rgba(255, 255, 255, 0.2);
+  
+  font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* Ensure dark mode class is ignored or compatible */
+.dark-mode, .light-mode {
+    /* Fluent theme is unified dark for now */
+}
+
+/* Rounded corners for items */
+.history-item {
+    border-radius: var(--card-radius);
+    border: var(--card-border);
+    background: var(--bg-element);
+    margin-bottom: 4px;
+    transition: background 0.1s ease;
+}
+
+.history-item:hover {
+    background: var(--card-hover-bg);
+}
+
+.history-item.selected {
+    background: rgba(96, 205, 255, 0.16) !important;
+    border: 1px solid rgba(96, 205, 255, 0.5) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+    outline: 1px solid rgba(96, 205, 255, 0.3);
+    outline-offset: -1px;
+}
