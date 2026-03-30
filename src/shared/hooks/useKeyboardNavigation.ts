@@ -105,10 +105,6 @@ export const useKeyboardNavigation = ({
       }
     });
 
-    const unlistenPinned = listen("window-pinned-changed", () => {
-      invoke("focus_clipboard_window").catch(console.error);
-    });
-
     const unlistenBlur = listen("tauri://blur", () => {
       setIsKeyboardMode(false);
       isKeyboardModeRef.current = false;
@@ -118,7 +114,6 @@ export const useKeyboardNavigation = ({
 
     return () => {
       unlistenNav.then(fn => fn()).catch(console.error);
-      unlistenPinned.then(fn => fn()).catch(console.error);
       unlistenBlur.then(fn => fn()).catch(console.error);
     };
   }, [arrowKeySelection, setIsKeyboardMode, setSelectedIndex, copyToClipboard]);

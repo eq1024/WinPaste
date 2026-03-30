@@ -92,6 +92,7 @@ pub fn toggle_window(app: &AppHandle) {
 
         IS_HIDDEN.store(false, Ordering::Relaxed);
         NAVIGATION_ENABLED.store(true, Ordering::SeqCst);
+        NAVIGATION_MODE_ACTIVE.store(true, Ordering::SeqCst); // 唤起时自动进入导航模式以便接受上下键和ESC
         let was_docked = is_hidden_by_edge;
         let current_dock_val = CURRENT_DOCK.load(Ordering::Relaxed);
         CURRENT_DOCK.store(0, Ordering::Relaxed);

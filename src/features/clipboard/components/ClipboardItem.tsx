@@ -467,9 +467,15 @@ const ClipboardItem = ({
     };
 
     return (
-        <motion.div id={id} layout={!disableLayout} initial={false} animate={{ marginBottom: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.1 }} 
+        <motion.div id={id} layout={!disableLayout} initial={false} animate={{ marginBottom: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.1 }}
             className={`history-item ${isSelected ? "selected" : ""} ${compactMode ? "compact" : ""} ${item.is_pinned ? "pinned" : ""} ${item.content_type === 'file' ? 'file-item' : ''}`}
             data-selected={isSelected}
+            onMouseDown={(e) => {
+                // 阻止默认行为以防止在置顶模式下点击时原窗口失去光标焦点
+                if (!(e.target as HTMLElement).closest('button, input, textarea')) {
+                    e.preventDefault();
+                }
+            }}
             onClick={(e) => { if ((e.target as HTMLElement).closest('button, input, textarea')) return; void hideCompactPreviewGlobal(); onCopy(false); onSelect(); }}
             onContextMenu={(e) => { if ((e.target as HTMLElement).closest('button, input, textarea')) return; void hideCompactPreviewGlobal(); e.preventDefault(); onCopy(true); onSelect(); }}
             onMouseEnter={(e) => { if (!canShowCompactPreview) return; hoverAnchorRef.current = { clientX: e.clientX, clientY: e.clientY, screenX: e.screenX, screenY: e.screenY }; if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current); hoverTimerRef.current = setTimeout(() => { if (hoverAnchorRef.current) showCompactPreview(hoverAnchorRef.current); }, 1000); }}

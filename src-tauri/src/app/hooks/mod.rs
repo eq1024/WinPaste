@@ -186,11 +186,12 @@ pub fn start_input_worker(app_handle: AppHandle, mut rx: tokio::sync::mpsc::Unbo
                             true
                         };
 
-                        if !allow_navigation { continue; }
-
                         let is_enter = vk_code == 0x0D;
                         let is_escape = vk_code == 0x1B;
                         let is_up_down = vk_code == 0x26 || vk_code == 0x28;
+
+                        // 只有方向键导航才受 allow_navigation 控制。ESC 和 Enter 永远可以。
+                        if is_up_down && !allow_navigation { continue; }
 
                         if is_enter || is_escape || is_up_down {
                             if is_enter && !NAVIGATION_MODE_ACTIVE.load(Ordering::Relaxed) {
@@ -244,6 +245,7 @@ pub fn start_input_worker(app_handle: AppHandle, mut rx: tokio::sync::mpsc::Unbo
                                                             pt.y < rect.top - margin || pt.y > rect.bottom + margin;
 
                                             if is_outside {
+                                                NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
                                                 if WINDOW_PINNED.load(Ordering::Relaxed) {
                                                     // In pinned mode, don't hide, but we can release focus
                                                     // However, DON'T set focusable(false) as it prevents clicking back to focus
