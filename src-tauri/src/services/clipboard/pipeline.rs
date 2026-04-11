@@ -156,15 +156,6 @@ impl PipelineStage for TransformationStage {
         // Normalization (already partially done but let's be thorough)
         entry.content = entry.content.trim().replace("\r\n", "\n");
 
-        // Sensitive Info
-        let protect_kinds = settings.privacy_protection_kinds.lock().unwrap().clone();
-        let custom_rules = settings.privacy_protection_custom_rules.lock().unwrap().clone();
-        if settings.privacy_protection.load(Ordering::Relaxed) && is_text_type(&entry.content_type) {
-            if contains_sensitive_info(&entry.content, &protect_kinds, &custom_rules) {
-                entry.tags.push("sensitive".to_string());
-            }
-        }
-        
         // Rich Text Image Processing
         if let Some(html) = &entry.html_content {
             let app_data_dir = ctx.app_handle.state::<AppDataDir>();

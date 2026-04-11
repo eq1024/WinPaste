@@ -55,6 +55,8 @@ export const useSettingsPanelProps = ({
     setCaptureRichText: state.setCaptureRichText,
     richTextSnapshotPreview: state.richTextSnapshotPreview,
     setRichTextSnapshotPreview: state.setRichTextSnapshotPreview,
+    autoHideTags: state.autoHideTags,
+    setAutoHideTags: state.setAutoHideTags,
     deleteAfterPaste: state.deleteAfterPaste,
     setDeleteAfterPaste: state.setDeleteAfterPaste,
     moveToTopAfterPaste: state.moveToTopAfterPaste,

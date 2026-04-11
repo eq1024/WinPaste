@@ -373,7 +373,7 @@ const ClipboardItem = ({
     disableLayout,
     t
 }: ClipboardItemProps & { t: (key: string) => string }) => {
-    const { language, richTextSnapshotPreview, showSourceAppIcon, compactMode, privacyProtection } = useSettingsStore();
+    const { language, richTextSnapshotPreview, showSourceAppIcon, compactMode, privacyProtection, autoHideTags } = useSettingsStore();
     const { tagInput, revealedIds, editingTagsId } = useHistoryStore();
     const isSelected = useHistoryStore(s => s.isKeyboardMode && index === s.selectedIndex);
 
@@ -509,73 +509,76 @@ const ClipboardItem = ({
                 )}
             </div>
             <div className="item-footer">
-                <div className="item-tags-container">
-                    {item.tags?.map(tag => (
-                        <span key={tag} className="tag-chip" style={{ background: getTagColor(tag, "fluent"), display: 'flex', alignItems: 'center', gap: '4px' }}>{tag}{isEditingTags && <button onClick={(e) => { e.stopPropagation(); onTagDelete(tag); }} style={{ background: 'none', border: 'none', padding: 0, color: 'currentColor', cursor: 'pointer', display: 'flex', opacity: 0.6 }}><X size={8} /></button>}</span>
-                    ))}
-                    {isEditingTags && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <input 
-                                ref={tagInputRef} 
-                                type="text" 
-                                value={localTagInput} 
-                                onCompositionStart={() => { isComposing.current = true; }} 
-                                onCompositionEnd={(e) => { 
-                                    isComposing.current = false; 
-                                    const val = (e.target as HTMLInputElement).value; 
-                                    setLocalTagInput(val); 
-                                    onTagInput(val); 
-                                }} 
-                                onMouseDown={(e) => { 
-                                    e.stopPropagation();
-                                    invoke('activate_window_focus').catch(console.error); 
-                                }} 
-                                onFocus={() => { invoke('activate_window_focus').catch(console.error); }} 
-                                onChange={(e) => { 
-                                    const val = e.target.value; 
-                                    setLocalTagInput(val); 
-                                    if (!isComposing.current) onTagInput(val); 
-                                }} 
-                                onKeyDown={(e) => { 
-                                    // Stop propagation to avoid conflicts with global list navigation
-                                    e.stopPropagation();
-                                    console.log('Tag input keydown:', e.key, 'isComposing:', isComposing.current);
+                {(!autoHideTags || isEditingTags) && (
+                    <div className="item-tags-container">
+                        {item.tags?.map(tag => (
+                            <span key={tag} className="tag-chip" style={{ background: getTagColor(tag, "fluent"), display: 'flex', alignItems: 'center', gap: '4px' }}>{tag}{isEditingTags && <button onClick={(e) => { e.stopPropagation(); onTagDelete(tag); }} style={{ background: 'none', border: 'none', padding: 0, color: 'currentColor', cursor: 'pointer', display: 'flex', opacity: 0.6 }}><X size={8} /></button>}</span>
+                        ))}
+                        {isEditingTags && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <input 
+                                    ref={tagInputRef} 
+                                    type="text" 
+                                    value={localTagInput} 
+                                    onCompositionStart={() => { isComposing.current = true; }} 
+                                    onCompositionEnd={(e) => { 
+                                        isComposing.current = false; 
+                                        const val = (e.target as HTMLInputElement).value; 
+                                        setLocalTagInput(val); 
+                                        onTagInput(val); 
+                                    }} 
+                                    onMouseDown={(e) => { 
+                                        e.stopPropagation();
+                                        invoke('activate_window_focus').catch(console.error); 
+                                    }} 
+                                    onFocus={() => { invoke('activate_window_focus').catch(console.error); }} 
+                                    onChange={(e) => { 
+                                        const val = e.target.value; 
+                                        setLocalTagInput(val); 
+                                        if (!isComposing.current) onTagInput(val); 
+                                    }} 
+                                    onKeyDown={(e) => { 
+                                        // Stop propagation to avoid conflicts with global list navigation
+                                        e.stopPropagation();
+                                        console.log('Tag input keydown:', e.key, 'isComposing:', isComposing.current);
 
-                                    if (e.key === 'Enter' && !isComposing.current) {
-                                        e.preventDefault();
-                                        // If input is empty, Enter can be used to close the editor
-                                        if (localTagInput.trim() === '') {
-                                            console.log('Enter on empty - closing editor');
+                                        if (e.key === 'Enter' && !isComposing.current) {
+                                            e.preventDefault();
+                                            // If input is empty, Enter can be used to close the editor
+                                            if (localTagInput.trim() === '') {
+                                                console.log('Enter on empty - closing editor');
+                                                onToggleTagEditor(e as any);
+                                            } else {
+                                                console.log('Enter - adding tag:', localTagInput);
+                                                onTagAdd();
+                                            }
+                                        } else if (e.key === 'Escape') {
+                                            e.preventDefault();
+                                            console.log('Escape - closing editor');
                                             onToggleTagEditor(e as any);
-                                        } else {
-                                            console.log('Enter - adding tag:', localTagInput);
-                                            onTagAdd();
                                         }
-                                    } else if (e.key === 'Escape') {
-                                        e.preventDefault();
-                                        console.log('Escape - closing editor');
-                                        onToggleTagEditor(e as any);
-                                    }
-                                    // Let Tab, Arrows etc. pass through to the element, but propagation is stopped
-                                }} 
-                                className="tag-input" 
-                                placeholder="..." 
-                                style={{ background: 'var(--bg-input)', border: '1px solid var(--line-soft)', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', color: 'var(--text-primary)', width: '50px', outline: 'none' }} 
-                                onClick={e => e.stopPropagation()} 
-                            />
-                            <button 
-                                onClick={(e) => { 
-                                    e.stopPropagation(); 
-                                    onTagAdd(); 
-                                }} 
-                                className="btn-icon" 
-                                style={{ padding: '2px', height: '18px', width: '18px' }}
-                            >
-                                <Plus size={10} />
-                            </button>
-                        </div>
-                    )}
-                </div>
+                                        // Let Tab, Arrows etc. pass through to the element, but propagation is stopped
+                                    }} 
+                                    className="tag-input" 
+                                    placeholder="..." 
+                                    style={{ background: 'var(--bg-input)', border: '1px solid var(--line-soft)', borderRadius: '4px', padding: '2px 6px', fontSize: '10px', color: 'var(--text-primary)', width: '50px', outline: 'none' }} 
+                                    onClick={e => e.stopPropagation()} 
+                                />
+                                <button 
+                                    onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        onTagAdd(); 
+                                    }} 
+                                    className="btn-icon" 
+                                    style={{ padding: '2px', height: '18px', width: '18px' }}
+                                >
+                                    <Plus size={10} />
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+                {!isEditingTags && autoHideTags && <div className="item-tags-placeholder" />}
                 <div className="item-actions">
                     {isSensitiveHidden && <button className={`btn-icon ${isRevealed ? "active" : ""}`} onClick={(e) => { e.stopPropagation(); onToggleReveal(e); }} title={t('reveal')}><Eye size={12} /></button>}
                     {!isSensitiveHidden && (item.tags?.includes('sensitive') || item.tags?.includes('密码')) && <button className={`btn-icon active`} onClick={(e) => { e.stopPropagation(); onToggleReveal(e); }} title={t('hide')}><EyeOff size={12} /></button>}

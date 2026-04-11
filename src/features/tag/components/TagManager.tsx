@@ -110,11 +110,6 @@ export default function TagManager({ t, theme }: TagManagerProps) {
         const trimmed = newTagName.trim();
         if (!trimmed || trimmed === oldName) { setEditingTag(null); return; }
 
-        if (oldName === 'sensitive' || oldName === '密码') {
-            setEditingTag(null);
-            return;
-        }
-
         try {
             await invoke('rename_tag_globally', { oldName, newName: trimmed });
             if (selectedTag === oldName) setSelectedTag(trimmed);
@@ -126,7 +121,6 @@ export default function TagManager({ t, theme }: TagManagerProps) {
     };
 
     const handleDeleteTag = async (tagName: string) => {
-        if (tagName === 'sensitive' || tagName === '密码') return;
         setIsDeleting(true);
         try {
             await invoke('delete_tag_from_all', { tagName });
@@ -299,26 +293,21 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                                     <div className="tag-hover-actions">
                                         <span title="重命名" onClick={(e) => {
                                             e.stopPropagation();
-                                            if (tag.name === 'sensitive' || tag.name === '密码') return;
                                             setEditingTag(tag.name);
                                             setNewTagName(tag.name);
                                         }} style={{
-                                            opacity: (tag.name === 'sensitive' || tag.name === '密码') ? 0.2 : 1,
-                                            cursor: (tag.name === 'sensitive' || tag.name === '密码') ? 'not-allowed' : 'pointer',
                                             display: 'flex',
                                             alignItems: 'center'
                                         }}>
                                             <Edit2 size={12} />
                                         </span>
-                                        {(tag.name !== 'sensitive' && tag.name !== '密码') && (
-                                            <span title="删除" onClick={(e) => {
-                                                e.stopPropagation();
-                                                e.preventDefault();
-                                                setDeleteConfirmation({ show: true, tagName: tag.name });
-                                            }} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                                                <Trash2 size={12} />
-                                            </span>
-                                        )}
+                                        <span title="删除" onClick={(e) => {
+                                            e.stopPropagation();
+                                            e.preventDefault();
+                                            setDeleteConfirmation({ show: true, tagName: tag.name });
+                                        }} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                                            <Trash2 size={12} />
+                                        </span>
                                     </div>
                                     <span className="tag-badge">{tag.count}</span>
                                 </>

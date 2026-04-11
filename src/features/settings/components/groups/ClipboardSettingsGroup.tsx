@@ -30,6 +30,8 @@ interface ClipboardSettingsGroupProps {
     setCaptureRichText: (val: boolean) => void;
     richTextSnapshotPreview: boolean;
     setRichTextSnapshotPreview: (val: boolean) => void;
+    autoHideTags: boolean;
+    setAutoHideTags: (val: boolean) => void;
     richPasteHotkey: string;
     isRecordingRich: boolean;
     setIsRecordingRich: (val: boolean) => void;
@@ -252,6 +254,27 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                     const val = e.target.checked;
                                     props.setRichTextSnapshotPreview(val);
                                     props.saveAppSetting('rich_text_snapshot_preview', String(val));
+                                }}
+                            />
+                            <div className="toggle"><div className="left" /><div className="right" /></div>
+                        </label>
+                    </div>
+
+                    <div className="setting-item">
+                        <props.LabelWithHint
+                            label={props.t('auto_hide_tags') || '自动隐藏标签'}
+                            hint={props.t('auto_hide_tags_hint')}
+                            hintKey="auto_hide_tags"
+                        />
+                        <label className="switch">
+                            <input
+                                className="cb"
+                                type="checkbox"
+                                checked={props.autoHideTags}
+                                onChange={(e) => {
+                                    const val = e.target.checked;
+                                    props.setAutoHideTags(val);
+                                    props.saveAppSetting('auto_hide_tags', String(val));
                                 }}
                             />
                             <div className="toggle"><div className="left" /><div className="right" /></div>
