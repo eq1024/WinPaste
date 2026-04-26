@@ -306,6 +306,7 @@ pub fn toggle_window(app: &AppHandle) {
                     }
                 }
                 let _ = window.show();
+                let _ = app.emit("window-shown", ());
                 if pinned {
                     WindowExt::show_window_no_activate(HWND(hwnd_raw.0));
                 } else {
@@ -315,6 +316,7 @@ pub fn toggle_window(app: &AppHandle) {
                 }
             } else {
                 let _ = window.show();
+                let _ = app.emit("window-shown", ());
                 if !pinned {
                     crate::IS_MAIN_WINDOW_FOCUSED.store(true, Ordering::Relaxed);
                     let _ = window.set_focus();
@@ -325,6 +327,7 @@ pub fn toggle_window(app: &AppHandle) {
         #[cfg(not(windows))]
         {
             let _ = window.show();
+            let _ = app.emit("window-shown", ());
         }
     }
 }
@@ -403,6 +406,7 @@ pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
     if let Some(window) = app_handle.get_webview_window("main") {
         let _ = window.set_focusable(true);
         let _ = window.show();
+        let _ = app_handle.emit("window-shown", ());
         
         #[cfg(windows)]
         {

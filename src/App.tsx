@@ -264,7 +264,17 @@ const App = () => {
   });
 
   useEffect(() => {
-    const unlisten = listen("focus-search-input", () => {
+    const unlistenShow = listen("window-shown", () => {
+      if (virtualListRef.current?.scrollToTop) {
+        virtualListRef.current.scrollToTop();
+      } else {
+        virtualListRef.current?.scrollToItem(0);
+      }
+      setSelectedIndexAdapter(0);
+      setIsKeyboardMode(false);
+    });
+
+    const unlistenSearchFocus = listen("focus-search-input", () => {
       setShowSettings(false);
       setShowTagManager(false);
       setShowSearchBox(true);
@@ -275,14 +285,17 @@ const App = () => {
     });
 
     return () => {
-      unlisten.then((off) => off());
+      unlistenShow.then((off) => off());
+      unlistenSearchFocus.then((off) => off());
     };
   }, [
     setShowSettings,
     setShowTagManager,
     setShowSearchBox,
     setSearchIsFocused,
-    searchInputRef
+    searchInputRef,
+    setSelectedIndexAdapter,
+    setIsKeyboardMode
   ]);
 
   useEffect(() => {
