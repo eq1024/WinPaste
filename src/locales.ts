@@ -137,6 +137,8 @@ export const translations = {
         tag_manager_enabled_hint: "关闭后隐藏标签管理入口",
         auto_hide_tags: "自动隐藏标签",
         auto_hide_tags_hint: "开启后仅在点击「标签」按钮时显示标签，完成编辑后自动隐藏",
+        pinned_collapsed: "折叠置顶记录",
+        pinned_collapsed_desc: "开启后，置顶的记录将折叠隐藏，不参与主列表的上下键选择",
         custom_background: "自定义背景",
         choose_background: "选择背景",
         change_background: "更换背景",
@@ -422,6 +424,7 @@ export const translations = {
         v028_notice_ok: "我知道了",
         official_website: "官方网站",
         hotkey_conflict_toast: "快捷键冲突：此按键已分配给「{name}」，请避免重复设置",
+        pinned_items_title: "置顶记录",
     },
     en: {
         // App Selector
@@ -487,6 +490,8 @@ export const translations = {
         capture_rich_text_hint: "When enabled, captures formatted text (bold, color, etc.). Single-click for plain text, right-click for formatted",
         rich_text_snapshot_preview: "Rich Text Snapshot Preview (Beta)",
         rich_text_snapshot_preview_hint: "Render captured HTML as an in-memory snapshot image for list and hover preview. More stable display, slightly higher memory use.",
+        pinned_collapsed: "Collapse Pinned Items",
+        pinned_collapsed_desc: "When enabled, pinned items are hidden and ignored by keyboard navigation.",
         clipboard_item_font_size: "Item Font Size",
         clipboard_item_font_size_hint: "Adjust font size for clipboard list items",
         clipboard_tag_font_size: "Tag Font Size",
@@ -568,6 +573,7 @@ export const translations = {
         tag_manager_enabled_hint: "Hide the tag manager entry when disabled.",
         auto_hide_tags: "Auto Hide Tags",
         auto_hide_tags_hint: "When enabled, tags are only shown while editing and hidden once finished.",
+        pinned_items_title: "Pinned Items",
         custom_background: "Custom Background",
         choose_background: "Choose Background",
         change_background: "Change Background",
@@ -846,6 +852,7 @@ export const translations = {
         hotkey_conflict_toast: "Hotkey Conflict: This key is already assigned to \"{name}\". Please use a different one.",
     },
     tw: {
+        pinned_items_title: "置顶记录",
         // App Selector
         system_recommended: "✨ 系統推薦",
         all_apps: "📂 所有應用",

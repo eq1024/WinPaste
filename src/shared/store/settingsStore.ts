@@ -37,6 +37,7 @@ interface SettingsState {
   captureRichText: boolean;
   richTextSnapshotPreview: boolean;
   autoHideTags: boolean;
+  pinnedCollapsed: boolean;
   
   // Privacy
   privacyProtection: boolean;
@@ -87,6 +88,7 @@ interface SettingsState {
   setCaptureRichText: (enabled: boolean) => void;
   setRichTextSnapshotPreview: (enabled: boolean) => void;
   setAutoHideTags: (enabled: boolean) => void;
+  setPinnedCollapsed: (enabled: boolean) => void;
   setPrivacyProtection: (enabled: boolean) => void;
   setPrivacyProtectionKinds: (kinds: string[]) => void;
   setPrivacyProtectionCustomRules: (rules: string) => void;
@@ -133,6 +135,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   captureRichText: false,
   richTextSnapshotPreview: false,
   autoHideTags: false,
+  pinnedCollapsed: false,
   privacyProtection: true,
   privacyProtectionKinds: ["phone", "idcard", "email", "secret"],
   privacyProtectionCustomRules: "",
@@ -176,6 +179,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setCaptureRichText: (captureRichText) => set({ captureRichText }),
   setRichTextSnapshotPreview: (richTextSnapshotPreview) => set({ richTextSnapshotPreview }),
   setAutoHideTags: (autoHideTags) => set({ autoHideTags }),
+  setPinnedCollapsed: (pinnedCollapsed) => set({ pinnedCollapsed }),
   setPrivacyProtection: (privacyProtection) => set({ privacyProtection }),
   setPrivacyProtectionKinds: (privacyProtectionKinds) => set({ privacyProtectionKinds }),
   setPrivacyProtectionCustomRules: (privacyProtectionCustomRules) => set({ privacyProtectionCustomRules }),

@@ -71,7 +71,14 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
 
         // Keep keyboard selection visible even when the item is only in overscan
         React.useEffect(() => {
-            if (!isKeyboardMode || selectedIndex < 0) return;
+            if (!isKeyboardMode) return;
+
+            // If selectedIndex is negative, it means a pinned item is selected (handled in parent).
+            // We should ensure the list is scrolled to the top so pinned items are visible.
+            if (selectedIndex < 0) {
+                virtuosoRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
 
             const range = visibleRangeRef.current;
             const edgeBuffer = 1;

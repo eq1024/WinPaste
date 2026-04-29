@@ -5,6 +5,8 @@
   max-width: 420px;
   margin: 0 auto;
   width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .settings-group {

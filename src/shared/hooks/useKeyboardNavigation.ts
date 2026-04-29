@@ -121,7 +121,7 @@ export const useKeyboardNavigation = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const activeEl = document.activeElement;
-      const isInputFocused = activeEl?.tagName === "INPUT" || activeEl?.tagName === "TEXTAREA";
+      const isInputFocused = activeEl?.tagName === "INPUT" || activeEl?.tagName === "TEXTAREA" || activeEl?.tagName === "SELECT";
       const isSearchInputFocused = activeEl === searchInputRef.current;
       const isEditingTags = editingTagsIdRef.current !== null;
 
@@ -132,45 +132,49 @@ export const useKeyboardNavigation = ({
       const isArrowDown = e.key === "ArrowDown" || e.key === "Down" || e.keyCode === 40;
       const isTab = e.key === "Tab" || e.keyCode === 9;
       
+      if (isArrowUp || isArrowDown) {
+        console.log(`[KeyboardNav Debug] Key pressed: ${e.key}, isComposing: ${e.isComposing}, keyCode: ${e.keyCode}`);
+      }
+
+      // 0. IMPORTANT: Never intercept keys while the user is using an IME (e.g. typing Chinese)
+      if (e.isComposing || e.keyCode === 229) {
+        if (isArrowUp || isArrowDown) console.log(`[KeyboardNav Debug] Returned early due to IME composition`);
+        return;
+      }
+      
       // Allow repeat for Arrow keys
       if (e.repeat && !isArrowUp && !isArrowDown) return;
 
+      if (isArrowUp || isArrowDown) {
+        console.log(`[KeyboardNav Debug] States -> isInputFocused: ${isInputFocused}, isSearchInputFocused: ${isSearchInputFocused}, isEditingTags: ${isEditingTags}, showSettings: ${showSettingsRef.current}, showTagManager: ${showTagManagerRef.current}`);
+      }
+
       // 2. Special modes handling (Settings, Tag Manager)
       if (showSettingsRef.current || showTagManagerRef.current) {
-        if (isEscape) {
+        if (isArrowUp || isArrowDown) console.log(`[KeyboardNav Debug] Returned early due to showSettings or showTagManager`);
+        if (isEscape && !e.isComposing && e.keyCode !== 229) {
           invoke("hide_window_cmd").catch(console.error);
         }
         return;
       }
 
       // 3. Tag editing mode handling
-      // In tag editing mode, we should NOT intercept keys that the input needs
       if (isEditingTags) {
-        // Only global action here is Escape to potentially hide window,
-        // but wait: we want Escape to close the tag editor first.
-        // So we return here and let the component handle Escape.
-        if (isEscape) return; 
-        
-        // If focus is not in the input (e.g. on a tag chip delete button),
-        // we might still want to ignore most global actions.
+        if (isArrowUp || isArrowDown) console.log(`[KeyboardNav Debug] Returned early due to isEditingTags`);
+        if (isEscape) return;
         if (isInputFocused && !isSearchInputFocused) return;
-        
-        // However, if we are editing tags but NOT focused on the input,
-        // we might still want to prevent list navigation conflicts.
         if (isArrowDown || isArrowUp || isEnter) return;
       }
 
-      // 4. Global Escape (when no special mode is active)
+      // 4. Global Escape
       if (isEscape) {
         invoke("hide_window_cmd").catch(console.error);
         return;
       }
 
-      // 5. Tab to focus search
+      // 5. Tab
       if (isTab && !isSearchInputFocused) {
-        // If we are already in another input (like tag input), don't steal Tab
         if (isInputFocused) return;
-        
         e.preventDefault();
         searchInputRef.current?.focus();
         return;
@@ -178,17 +182,32 @@ export const useKeyboardNavigation = ({
 
       // 6. Navigation (Up/Down)
       if (isArrowDown || isArrowUp) {
-        // Don't navigate if focused on some other input
-        if (isInputFocused && !isSearchInputFocused) return;
+        if (isInputFocused && !isSearchInputFocused) {
+           console.log(`[KeyboardNav Debug] Returned early: isInputFocused && !isSearchInputFocused`);
+           return;
+        }
         
         e.preventDefault();
+        console.log(`[KeyboardNav Debug] Processing navigation. isKeyboardModeRef.current: ${isKeyboardModeRef.current}, currentIdx: ${selectedIndexRef.current}`);
         
         if (!isKeyboardModeRef.current) {
           setIsKeyboardMode(true);
           isKeyboardModeRef.current = true;
-          const idx = isArrowDown ? 0 : historyRef.current.length - 1;
-          setSelectedIndex(idx);
-          selectedIndexRef.current = idx;
+          // Use current selection if valid, otherwise jump to start/end
+          const currentIdx = selectedIndexRef.current;
+          const isValidIdx = currentIdx >= 0 && currentIdx < historyRef.current.length;
+          
+          let nextIdx = 0;
+          if (isValidIdx) {
+              nextIdx = isArrowDown
+                  ? Math.min(historyRef.current.length - 1, currentIdx + 1)
+                  : Math.max(0, currentIdx - 1);
+          } else {
+              nextIdx = isArrowDown ? 0 : historyRef.current.length - 1;
+          }
+          
+          setSelectedIndex(nextIdx);
+          selectedIndexRef.current = nextIdx;
           return;
         }
 
@@ -204,6 +223,8 @@ export const useKeyboardNavigation = ({
 
       // 7. Enter to copy
       if (isEnter) {
+        if (e.isComposing || e.keyCode === 229) return;
+        
         // Don't copy if focused on some other input
         if (isInputFocused && !isSearchInputFocused) return;
         

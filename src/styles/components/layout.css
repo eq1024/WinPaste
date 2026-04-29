@@ -142,9 +142,10 @@ select.search-input option {
   z-index: 5;
   border-radius: var(--button-radius);
   padding: 8px;
-  background: var(--bg-panel) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  /* Fallback for WebView2 transparent window bug */
+  background: rgba(45, 45, 45, 0.95) !important;
+  backdrop-filter: blur(12px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
   border: 1px solid var(--border-light) !important;
   box-shadow: var(--shadow-md) !important;
   width: 36px !important;

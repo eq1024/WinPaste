@@ -62,7 +62,9 @@ const SortableItem = ({
       style={{
         listStyle: "none",
         overflow: "visible",
-        paddingTop: isFirst ? "4px" : undefined
+        paddingTop: isFirst ? "4px" : undefined,
+        paddingBottom: "4px", /* match unpinned spacing roughly */
+        width: "calc(100% - 12px)"
       }}
     >
       {renderItem(item, index, controls, true)}
@@ -92,6 +94,7 @@ const AppMainContent = ({
 
   const {
     compactMode,
+    pinnedCollapsed,
   } = useSettingsStore();
 
   const {
@@ -107,6 +110,7 @@ const AppMainContent = ({
   );
   const pinnedOrderRef = useRef<number[]>(pinnedItems.map((item) => item.id));
   const [isDraggingPinned, setIsDraggingPinned] = useState(false);
+  const [isPinnedExpanded, setIsPinnedExpanded] = useState(false);
 
   useEffect(() => {
     if (isDraggingPinned) return;
@@ -174,7 +178,7 @@ const AppMainContent = ({
   };
 
   return (
-    <AnimatePresence mode="wait">
+    <AnimatePresence mode="popLayout">
       {showTagManager && tagManagerEnabled ? (
         <motion.div
           key="tag-manager"
@@ -231,30 +235,74 @@ const AppMainContent = ({
             isKeyboardMode={isKeyboardMode}
             header={
               pinnedItems.length > 0 ? (
-                <Reorder.Group
-                  axis="y"
-                  values={orderedPinnedIds}
-                  onReorder={handlePinnedIdsReorder}
-                  className={isDraggingPinned ? "pinned-reorder dragging" : "pinned-reorder"}
-                  style={{ listStyle: "none", padding: 0 }}
-                >
-                  {orderedPinnedItems.map((item, index) => (
-                    <SortableItem
-                      key={item.id}
-                      item={item}
-                      index={index}
-                      renderItem={renderItemContent}
-                      isFirst={index === 0}
-                      onDragStart={handlePinnedDragStart}
-                      onDragEnd={handlePinnedDragEnd}
-                    />
-                  ))}
-                </Reorder.Group>
+                pinnedCollapsed ? (
+                  <div style={{ marginBottom: "8px" }}>
+                    <div
+                      onClick={() => setIsPinnedExpanded(!isPinnedExpanded)}
+                      style={{
+                        padding: "6px 12px",
+                        fontSize: "11px",
+                        fontWeight: "bold",
+                        color: "var(--text-secondary)",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        userSelect: "none"
+                      }}
+                    >
+                      <span style={{ transform: isPinnedExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s', display: 'inline-block' }}>▶</span>
+                      {t('pinned_items_title') || '置顶记录'} ({pinnedItems.length})
+                    </div>
+                    {isPinnedExpanded && (
+                      <Reorder.Group
+                        axis="y"
+                        values={orderedPinnedIds}
+                        onReorder={handlePinnedIdsReorder}
+                        className={isDraggingPinned ? "pinned-reorder dragging" : "pinned-reorder"}
+                        style={{ listStyle: "none", padding: 0 }}
+                      >
+                        {orderedPinnedItems.map((item, index) => (
+                          <SortableItem
+                            key={item.id}
+                            item={item}
+                            index={index}
+                            renderItem={renderItemContent}
+                            isFirst={index === 0}
+                            onDragStart={handlePinnedDragStart}
+                            onDragEnd={handlePinnedDragEnd}
+                          />
+                        ))}
+                      </Reorder.Group>
+                    )}
+                  </div>
+                ) : (
+                  <Reorder.Group
+                    axis="y"
+                    values={orderedPinnedIds}
+                    onReorder={handlePinnedIdsReorder}
+                    className={isDraggingPinned ? "pinned-reorder dragging" : "pinned-reorder"}
+                    style={{ listStyle: "none", padding: 0 }}
+                  >
+                    {orderedPinnedItems.map((item, index) => (
+                      <SortableItem
+                        key={item.id}
+                        item={item}
+                        index={index}
+                        renderItem={renderItemContent}
+                        isFirst={index === 0}
+                        onDragStart={handlePinnedDragStart}
+                        onDragEnd={handlePinnedDragEnd}
+                      />
+                    ))}
+                  </Reorder.Group>
+                )
               ) : null
             }
             renderItem={(item, index, isFirst?: boolean) => {
-              const el = renderItemContent(item, pinnedItems.length + index, undefined, true);
-              if (isFirst && pinnedItems.length === 0) {
+              const absoluteIndex = pinnedItems.length + index;
+              const el = renderItemContent(item, absoluteIndex, undefined, true);
+              if (isFirst && (pinnedItems.length === 0 || pinnedCollapsed)) {
                 return (
                   <div className="first-virtual-item" style={{ height: "100%", paddingTop: "4px" }}>
                     {el}

@@ -40,7 +40,7 @@ export const useAppBootstrap = ({
     const types = ["text", "image", "video", "code", "url"];
     types.forEach(async (type) => {
       try {
-        const appName = await invoke<string>("get_system_default_app", { fileType: type });
+        const appName = await invoke<string>("get_system_default_app", { contentType: type });
         if (!disposed) {
           setDefaultApps(prev => ({ ...prev, [type]: appName }));
         }

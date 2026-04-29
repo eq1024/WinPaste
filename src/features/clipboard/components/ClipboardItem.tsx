@@ -485,11 +485,11 @@ const ClipboardItem = ({
             <div className="item-header">
                 <div className="item-app-info">
                     {dragControls && <div className="drag-handle" onPointerDown={(e) => dragControls.start(e)} style={{ cursor: 'grab', opacity: 0.5, marginRight: '4px' }}><GripVertical size={12} /></div>}
-                    {item.is_pinned && !dragControls && <Pin size={10} style={{ color: 'var(--accent-color)', marginRight: '-2px' }} />}
+                    {item.is_pinned && !dragControls && <Pin size={10} style={{ color: 'var(--accent-color)', marginRight: '-2px', flexShrink: 0 }} />}
                     {showSourceAppIcon ? renderSourceAppIcon(sourceAppIcon, item.content_type, item.source_app) : getIcon(item.content_type)}
-                    <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{item.source_app}</span>
+                    <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', minWidth: 0, flex: 1 }}>{item.source_app}</span>
                 </div>
-                <div className="item-timestamp">{getConciseTime(item.timestamp, language)}</div>
+                <div className="item-timestamp" style={{ flexShrink: 0 }}>{getConciseTime(item.timestamp, language)}</div>
             </div>
             {compactMode && item.is_pinned && <div className="compact-pinned-indicator"><Pin size={10} fill="currentColor" /></div>}
             <div className={`content-preview ${item.content_type === 'rich_text' ? 'rich-text' : ''} ${item.content_type === 'file' ? 'file-preview' : ''} ${isSensitiveHidden ? 'sensitive-blur' : ''}`}>

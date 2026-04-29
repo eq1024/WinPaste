@@ -1,6 +1,6 @@
 [package]
 name = "winpaste-app"
-version = "1.0.6"
+version = "1.0.7"
 description = "A Tauri App"
 authors = ["eq1024"]
 edition = "2021"

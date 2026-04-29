@@ -30,6 +30,7 @@ export interface SettingsPanelProps {
     captureRichText: boolean;
     richTextSnapshotPreview: boolean;
     autoHideTags: boolean;
+    pinnedCollapsed: boolean;
     deleteAfterPaste: boolean;
     moveToTopAfterPaste: boolean;
     sequentialMode: boolean;
@@ -95,6 +96,7 @@ export interface SettingsPanelProps {
     setCaptureRichText: (val: boolean) => void;
     setRichTextSnapshotPreview: (val: boolean) => void;
     setAutoHideTags: (val: boolean) => void;
+    setPinnedCollapsed: (val: boolean) => void;
     setDeleteAfterPaste: (val: boolean) => void;
     setMoveToTopAfterPaste: (val: boolean) => void;
     saveAppSetting: (key: string, val: string) => void;
@@ -135,7 +137,7 @@ export interface SettingsPanelProps {
 const SettingsPanel = (props: SettingsPanelProps) => {
     const {
         t, language,
-        collapsedGroups, autoStart, silentStart, persistent, persistentLimitEnabled, persistentLimit, deduplicate, captureFiles, captureRichText, richTextSnapshotPreview, autoHideTags, deleteAfterPaste, moveToTopAfterPaste,
+        collapsedGroups, autoStart, silentStart, persistent, persistentLimitEnabled, persistentLimit, deduplicate, captureFiles, captureRichText, richTextSnapshotPreview, autoHideTags, pinnedCollapsed, deleteAfterPaste, moveToTopAfterPaste,
         sequentialMode, sequentialHotkey, isRecordingSequential,
         richPasteHotkey, isRecordingRich, searchHotkey, isRecordingSearch,
         privacyProtection, privacyProtectionKinds, setPrivacyProtectionKinds, privacyProtectionCustomRules, setPrivacyProtectionCustomRules, registryWinVEnabled, setRegistryWinVEnabled, showSearchBox, setShowSearchBox, scrollTopButtonEnabled, setScrollTopButtonEnabled, arrowKeySelection, setArrowKeySelection, vibrancyEnabled, setVibrancyEnabled,
@@ -148,7 +150,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         followMouse, setFollowMouse,
         installedApps, appSettings, defaultApps, showAppSelector, dataPath,
 
-        toggleGroup, setAutoStart, setSilentStart, setPersistent, setPersistentLimitEnabled, setPersistentLimit, setDeduplicate, setCaptureFiles, setCaptureRichText, setRichTextSnapshotPreview, setAutoHideTags, setDeleteAfterPaste, setMoveToTopAfterPaste, saveAppSetting,
+        toggleGroup, setAutoStart, setSilentStart, setPersistent, setPersistentLimitEnabled, setPersistentLimit, setDeduplicate, setCaptureFiles, setCaptureRichText, setRichTextSnapshotPreview, setAutoHideTags, setPinnedCollapsed, setDeleteAfterPaste, setMoveToTopAfterPaste, saveAppSetting,
         setSequentialModeState, setIsRecordingSequential, updateSequentialHotkey,
         setIsRecordingRich, updateRichPasteHotkey,
         setIsRecordingSearch, updateSearchHotkey,
@@ -271,6 +273,8 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 setRichTextSnapshotPreview={setRichTextSnapshotPreview}
                 autoHideTags={autoHideTags}
                 setAutoHideTags={setAutoHideTags}
+                pinnedCollapsed={pinnedCollapsed}
+                setPinnedCollapsed={setPinnedCollapsed}
                 richPasteHotkey={richPasteHotkey}
                 isRecordingRich={isRecordingRich}
                 setIsRecordingRich={setIsRecordingRich}

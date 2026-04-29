@@ -456,22 +456,36 @@ const App = () => {
     setHistory: setHistoryAdapter
   });
 
-  useListSelectionReset({ filteredHistory, setSelectedIndex: setSelectedIndexAdapter });
+  const navigationHistory = unpinnedItems;
+  const pinnedCount = pinnedItems.length;
+
+  const setSelectedIndexAdapterVirtual = useCallback((action: React.SetStateAction<number>) => {
+    if (typeof action === 'function') {
+      const currentGlobalIdx = useHistoryStore.getState().selectedIndex;
+      const currentUnpinnedIdx = Math.max(0, currentGlobalIdx - pinnedCount);
+      const nextUnpinnedIdx = action(currentUnpinnedIdx);
+      setSelectedIndex(nextUnpinnedIdx + pinnedCount);
+    } else {
+      setSelectedIndex(action + pinnedCount);
+    }
+  }, [setSelectedIndex, pinnedCount]);
+
+  useListSelectionReset({ filteredHistory: navigationHistory, setSelectedIndex: setSelectedIndexAdapterVirtual });
 
   useSearchFetchTrigger({ debouncedSearch, isComposing, typeFilter, fetchHistory });
 
   useScrollToSelection({
-    filteredHistory,
-    selectedIndex,
+    filteredHistory: navigationHistory,
+    selectedIndex: Math.max(0, selectedIndex - pinnedCount),
     isKeyboardMode,
-    pinnedCount: pinnedItems.length,
+    pinnedCount: 0,
     virtualListRef
   });
 
   useKeyboardNavigation({
-    filteredHistory,
-    selectedIndex,
-    setSelectedIndex: setSelectedIndexAdapter,
+    filteredHistory: navigationHistory,
+    selectedIndex: Math.max(0, selectedIndex - pinnedCount),
+    setSelectedIndex: setSelectedIndexAdapterVirtual,
     isKeyboardMode,
     setIsKeyboardMode: setIsKeyboardMode as any,
     showSettings,
