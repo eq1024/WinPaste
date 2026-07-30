@@ -1,0 +1,57 @@
+name: Deploy Landing Page
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'landing/**'
+      - 'src-tauri/tauri.conf.json'
+      - '.github/workflows/deploy-landing.yml'
+  workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read WinPaste version
+        id: version
+        run: |
+          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "WinPaste version: $VERSION"
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Prepare landing page
+        run: |
+          mkdir -p _site
+          cp -r landing/* _site/
+          sed -i "s/{{VERSION}}/${{ steps.version.outputs.version }}/g" _site/index.html
+          echo "Version ${{ steps.version.outputs.version }} injected into landing page"
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '_site'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

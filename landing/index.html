@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WinPaste — Clipboard, uninterrupted.</title>
+  <meta name="description"
+    content="A fast, lightweight Windows clipboard manager. Zero focus interruption, cursor-aware popup, keyboard-driven. Built with Rust and Tauri.">
+  <link rel="icon" href="logo.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg-deep: #08080C;
+      --bg-surface: #111118;
+      --bg-card: #181820;
+      --border-subtle: #22222E;
+      --border-strong: #2E2E3C;
+      --text-primary: #EEEBF4;
+      --text-secondary: #9191A2;
+      --text-tertiary: #626278;
+      --accent: #f86d14;
+      --accent-dim: rgba(248, 109, 20, 0.12);
+      --accent-glow: rgba(248, 109, 20, 0.25);
+      --accent-light: #fa8e41;
+      --purple: #A78BFA;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --font-display: 'Outfit', system-ui, sans-serif;
+      --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --max-width: 1120px;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 20% 0%, rgba(248, 109, 20, 0.05) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 60%, rgba(167, 139, 250, 0.03) 0%, transparent 60%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      margin-top: 40px;
+      padding: 0 2rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 2rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(16px) saturate(140%);
+      -webkit-backdrop-filter: blur(16px) saturate(140%);
+      background: rgba(8, 8, 12, 0.72);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 1.2rem;
+      letter-spacing: -0.01em;
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+
+    .nav-brand img {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      flex-shrink: 0;
+    }
+
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover {
+      color: var(--text-primary);
+    }
+
+    .nav-cta {
+      background: var(--accent);
+      color: #fff !important;
+      padding: 0.45rem 1.1rem;
+      border-radius: 100px;
+      font-weight: 600 !important;
+      font-size: 0.85rem !important;
+      transition: background 0.2s, transform 0.15s;
+    }
+
+    .nav-cta:hover {
+      background: var(--accent-light);
+      transform: translateY(-1px);
+    }
+
+    .lang-toggle {
+      background: transparent;
+      border: 1px solid var(--border-strong);
+      color: var(--text-secondary);
+      padding: 0.35rem 0.7rem;
+      border-radius: 100px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-display);
+      transition: all 0.2s;
+      letter-spacing: 0.02em;
+    }
+
+    .lang-toggle:hover {
+      border-color: var(--text-tertiary);
+      color: var(--text-primary);
+    }
+
+    .lang-toggle.active {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ── Hero ── */
+    .hero {
+      padding: 5rem 0 6rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4rem;
+      align-items: center;
+    }
+
+    .hero-text {
+      max-width: 520px;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(248, 109, 20, 0.18);
+      color: var(--accent);
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.35rem 0.9rem;
+      border-radius: 100px;
+      margin-bottom: 1.5rem;
+      font-family: var(--font-display);
+      letter-spacing: 0.02em;
+    }
+
+    .hero-badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent-glow);
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: clamp(2.6rem, 5vw, 3.8rem);
+      font-weight: 700;
+      line-height: 1.08;
+      letter-spacing: -0.025em;
+      margin-bottom: 1.25rem;
+    }
+
+    h1 em {
+      font-style: normal;
+      color: var(--accent);
+    }
+
+    .hero-desc {
+      color: var(--text-secondary);
+      font-size: 1.12rem;
+      line-height: 1.65;
+      margin-bottom: 2rem;
+      max-width: 440px;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 0.85rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.6rem;
+      border-radius: 100px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      font-family: var(--font-display);
+      letter-spacing: 0.01em;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-light);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(248, 109, 20, 0.25);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      color: var(--text-primary);
+      border: 1px solid var(--border-strong);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--text-tertiary);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .hero-version {
+      color: var(--text-tertiary);
+      font-size: 0.8rem;
+      font-family: var(--font-display);
+      margin-top: 1rem;
+    }
+
+    /* ── Hero visual: 3D tilt card ── */
+    .hero-visual {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      perspective: 1200px;
+    }
+
+    .tilt-card {
+      position: relative;
+      width: 272px;
+      max-width: 100%;
+      border-radius: 16px;
+      overflow: hidden;
+      transform-style: preserve-3d;
+      transform: rotateY(-8deg) rotateX(3deg) scale3d(1.01, 1.01, 1.01);
+      transition: transform 0.6s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+      box-shadow:
+        -8px 10px 50px rgba(0, 0, 0, 0.55),
+        0 0 0 1px rgba(255, 255, 255, 0.06),
+        0 0 80px rgba(248, 109, 20, 0.04);
+      background: #0d0d14;
+    }
+
+    .tilt-card img {
+      display: block;
+      width: calc(100% + 5px);
+      height: auto;
+      margin: -2px -2px -2px -3px;
+      max-width: none;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    .tilt-card::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(135deg,
+          rgba(255, 255, 255, 0.1) 0%,
+          rgba(255, 255, 255, 0.03) 30%,
+          transparent 55%,
+          rgba(255, 255, 255, 0.04) 70%,
+          transparent 100%),
+        radial-gradient(circle at var(--glare-x, 35%) var(--glare-y, 45%),
+          rgba(255, 255, 255, 0.12) 0%,
+          rgba(255, 255, 255, 0.04) 30%,
+          transparent 60%);
+      pointer-events: none;
+      border-radius: inherit;
+      transition: opacity 0.4s;
+      opacity: 1;
+    }
+
+    /* ── Sections ── */
+    section {
+      padding: 5rem 0;
+    }
+
+    .section-header {
+      text-align: center;
+      max-width: 600px;
+      margin: 0 auto 3.5rem;
+    }
+
+    .section-eyebrow {
+      font-family: var(--font-display);
+      font-size: 0.78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+
+    .section-header h2 {
+      font-family: var(--font-display);
+      font-size: clamp(1.8rem, 3vw, 2.5rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 0.75rem;
+    }
+
+    .section-header p {
+      color: var(--text-secondary);
+      font-size: 1.05rem;
+    }
+
+    /* ── Features ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1.75rem;
+      transition: border-color 0.25s, background 0.25s;
+    }
+
+    .feature-card:hover {
+      border-color: var(--border-strong);
+      background: #1C1C26;
+    }
+
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1rem;
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    .feature-card h3 {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1.05rem;
+      letter-spacing: -0.01em;
+      margin-bottom: 0.45rem;
+    }
+
+    .feature-card p {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    /* ── Captures ── */
+    .captures-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.75rem;
+    }
+
+    .capture-badge {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 1.25rem 0.75rem;
+      text-align: center;
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+    }
+
+    .capture-badge .icon {
+      font-size: 1.5rem;
+      margin-bottom: 0.4rem;
+      display: block;
+    }
+
+    /* ── Steps ── */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+
+    .step {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 2rem 1.75rem;
+      position: relative;
+    }
+
+    .step-tag {
+      display: inline-block;
+      font-family: var(--font-display);
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 0.25rem 0.65rem;
+      border-radius: 100px;
+      margin-bottom: 1rem;
+    }
+
+    .step-tag.copy {
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    .step-tag.invoke {
+      background: rgba(167, 139, 250, 0.12);
+      color: var(--purple);
+    }
+
+    .step-tag.paste {
+      background: rgba(94, 234, 212, 0.1);
+      color: #5EEAD4;
+    }
+
+    .step h3 {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .step p {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    /* ── Spotlight ── */
+    .spotlight {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 3rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .spotlight::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at 30% 50%, rgba(248, 109, 20, 0.05) 0%, transparent 50%);
+      pointer-events: none;
+    }
+
+    .spotlight-content {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3rem;
+      align-items: center;
+    }
+
+    .spotlight-text h2 {
+      font-family: var(--font-display);
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 1rem;
+    }
+
+    .spotlight-text h2 span {
+      color: var(--accent);
+    }
+
+    .spotlight-text p {
+      color: var(--text-secondary);
+      font-size: 1.02rem;
+      line-height: 1.7;
+    }
+
+    .spotlight-stat {
+      text-align: center;
+    }
+
+    .spotlight-stat .number {
+      font-family: var(--font-display);
+      font-size: 4rem;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+
+    .spotlight-stat .label {
+      color: var(--text-tertiary);
+      font-size: 0.9rem;
+      margin-top: 0.5rem;
+    }
+
+    /* ── Stats ── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+      margin-top: 4rem;
+    }
+
+    .stat-item {
+      text-align: center;
+      padding: 1.5rem;
+    }
+
+    .stat-item .num {
+      font-family: var(--font-display);
+      font-size: 2.2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--text-primary);
+    }
+
+    .stat-item .lbl {
+      color: var(--text-tertiary);
+      font-size: 0.85rem;
+      margin-top: 0.3rem;
+    }
+
+    /* ── Download ── */
+    .download {
+      text-align: center;
+      padding: 6rem 0;
+    }
+
+    .download h2 {
+      font-family: var(--font-display);
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 1rem;
+    }
+
+    .download p {
+      color: var(--text-secondary);
+      font-size: 1.05rem;
+      margin-bottom: 2rem;
+    }
+
+    .download-card {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.25rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 2.5rem 3rem;
+    }
+
+    .download-info {
+      color: var(--text-tertiary);
+      font-size: 0.85rem;
+      font-family: var(--font-display);
+    }
+
+    .download-info span {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 2.5rem 0;
+      text-align: center;
+    }
+
+    footer .container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    footer,
+    footer a {
+      color: var(--text-tertiary);
+      font-size: 0.85rem;
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      color: var(--text-secondary);
+    }
+
+    footer .footer-links {
+      display: flex;
+      gap: 1.5rem;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 900px) {
+      .hero {
+        grid-template-columns: 1fr;
+        gap: 2.5rem;
+        text-align: center;
+        padding: 3rem 0 4rem;
+      }
+
+      .hero-text {
+        max-width: 100%;
+      }
+
+      .hero-desc {
+        max-width: 100%;
+      }
+
+      .hero-actions {
+        justify-content: center;
+      }
+
+      .features-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .captures-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .steps {
+        grid-template-columns: 1fr;
+      }
+
+      .spotlight-content {
+        grid-template-columns: 1fr;
+        text-align: center;
+      }
+
+      .stats-row {
+        grid-template-columns: 1fr;
+        gap: 0;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .features-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .captures-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .nav-links .nav-cta {
+        display: none;
+      }
+
+      .nav-links a[href="#how"] {
+        display: none;
+      }
+
+      .hero-actions {
+        flex-direction: column;
+      }
+
+      .btn {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .tilt-card {
+        width: 224px;
+      }
+
+      h1 {
+        font-size: 2rem;
+      }
+
+      .container {
+        padding: 0 1.25rem;
+      }
+
+      nav {
+        padding: 1rem 1.25rem;
+      }
+    }
+
+    /* Touch: keep default angle, no hover interaction */
+    @media (hover: none) {
+      .tilt-card {
+        transition: none;
+        transform: rotateY(-8deg) rotateX(3deg) scale3d(1.01, 1.01, 1.01) !important;
+      }
+    }
+
+    /* Reduced motion: flat, no effects */
+    @media (prefers-reduced-motion: reduce) {
+      .tilt-card {
+        transition: none;
+        transform: none !important;
+      }
+
+      .tilt-card::after {
+        opacity: 0.3;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+
+      html {
+        scroll-behavior: auto;
+      }
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <nav>
+    <a href="#" class="nav-brand">
+      <img src="logo.png" alt="" width="28" height="28">
+      WinPaste
+    </a>
+    <div class="nav-right">
+      <div class="nav-links">
+        <a href="#features" data-i18n="nav_features">Features</a>
+        <a href="#how" data-i18n="nav_how">How it works</a>
+        <a href="https://github.com/eq1024/WinPaste" target="_blank" rel="noopener" data-i18n="nav_github">GitHub</a>
+        <a href="#download" class="nav-cta" data-i18n="nav_download">Download</a>
+      </div>
+      <button class="lang-toggle" id="langToggle" aria-label="Switch language">EN</button>
+    </div>
+  </nav>
+
+  <main>
+    <!-- ── Hero ── -->
+    <section class="hero container">
+      <div class="hero-text">
+        <div class="hero-badge">
+          <span class="hero-badge-dot"></span> <span data-i18n="hero_badge">Windows 10 / 11</span>
+        </div>
+        <h1><span data-i18n="hero_title_before">Your clipboard,</span> <em
+            data-i18n="hero_title_accent">uninterrupted.</em></h1>
+        <p class="hero-desc" data-i18n="hero_desc">
+          A fast, lightweight clipboard manager that replaces Win+V. Pops up at your cursor, never steals focus, and
+          stays out of your way.
+        </p>
+        <div class="hero-actions">
+          <a href="#download" class="btn btn-primary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            <span data-i18n="hero_download_btn">Download v{{VERSION}}</span>
+          </a>
+          <a href="https://github.com/eq1024/WinPaste" target="_blank" rel="noopener" class="btn btn-secondary">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+              <path
+                d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+            </svg>
+            <span data-i18n="hero_github_btn">GitHub</span>
+          </a>
+        </div>
+        <p class="hero-version" data-i18n="hero_license">Free &amp; open source. GNU licensed.</p>
+      </div>
+
+      <div class="hero-visual" aria-hidden="true">
+        <div class="tilt-card" id="tiltCard">
+          <img src="hero.png" alt="WinPaste screenshot">
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Stats ── -->
+    <section class="container" style="padding-top:0">
+      <div class="stats-row">
+        <div class="stat-item">
+          <div class="num">&lt;10 MB</div>
+          <div class="lbl" data-i18n="stat_memory_label">Memory footprint</div>
+        </div>
+        <div class="stat-item">
+          <div class="num">Rust + Tauri</div>
+          <div class="lbl" data-i18n="stat_rust_label">Built for speed &amp; safety</div>
+        </div>
+        <div class="stat-item">
+          <div class="num" data-i18n="stat_focus">0</div>
+          <div class="lbl" data-i18n="stat_focus_label">Focus interruptions. Ever.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Features ── -->
+    <section id="features" class="container">
+      <div class="section-header">
+        <p class="section-eyebrow" data-i18n="section_features_eyebrow">Features</p>
+        <h2 data-i18n="section_features_title">Everything you need, nothing you don't.</h2>
+        <p data-i18n="section_features_desc">WinPaste strips away the bloat. Every feature earns its place through daily
+          use.</p>
+      </div>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="3" y1="9" x2="21" y2="9" />
+              <line x1="9" y1="21" x2="9" y2="9" />
+            </svg></div>
+          <h3 data-i18n="feat_focus_title">Zero focus interruption</h3>
+          <p data-i18n="feat_focus_desc">The panel appears without stealing keyboard focus. Your current work — renaming
+            files, editing cells, typing code — is never disrupted.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round">
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" />
+            </svg></div>
+          <h3 data-i18n="feat_search_title">Instant search</h3>
+          <p data-i18n_html="feat_search_desc">Hit <kbd>Ctrl+F</kbd> or <kbd>/</kbd> to focus the search bar. Filter by
+            content, type, or tags. Results update as you type — no delay.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round">
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg></div>
+          <h3 data-i18n="feat_cursor_title">Smart cursor tracking</h3>
+          <p data-i18n="feat_cursor_desc">Uses UIAutomation to detect cursor position even in Chrome, VS Code, and
+            Electron apps where traditional APIs fail. The panel always appears exactly where you need it.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round">
+              <polyline points="9 11 12 14 22 4" />
+              <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+            </svg></div>
+          <h3 data-i18n="feat_format_title">Multi-format capture</h3>
+          <p data-i18n="feat_format_desc">Captures plain text, rich HTML, images, file paths, and GIFs. Each entry shows
+            its source application so you know exactly where it came from.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" />
+              <path d="M7 11V7a5 5 0 0110 0v4" />
+            </svg></div>
+          <h3 data-i18n="feat_privacy_title">Privacy protection</h3>
+          <p data-i18n="feat_privacy_desc">Auto-detects and masks phone numbers, ID cards, emails, and passwords. Add
+            custom regex rules. Sensitive data is AES-encrypted at rest.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z" />
+              <path d="M2 17l10 5 10-5" />
+              <path d="M2 12l10 5 10-5" />
+            </svg></div>
+          <h3 data-i18n="feat_cloud_title">Cloud sync (Beta)</h3>
+          <p data-i18n="feat_cloud_desc">Sync your clipboard across devices using WebDAV. Auto-sync on a schedule with
+            configurable intervals. Full snapshot backups for safety.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round">
+              <circle cx="12" cy="12" r="10" />
+              <polygon points="10 8 16 12 10 16 10 8" />
+            </svg></div>
+          <h3 data-i18n="feat_sequential_title">Sequential paste mode</h3>
+          <p data-i18n="feat_sequential_desc">Queue up multiple items and paste them one by one with a single hotkey.
+            Perfect for filling forms or copying structured data.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round">
+              <path d="M20.24 12.24a6 6 0 00-8.49-8.49L5 10.5V19h8.5l6.74-6.76z" />
+              <line x1="16" y1="8" x2="2" y2="22" />
+              <line x1="17.5" y1="15" x2="9" y2="15" />
+            </svg></div>
+          <h3 data-i18n="feat_pin_title">Pin &amp; sticky mode</h3>
+          <p data-i18n="feat_pin_desc">Pin frequently-used items to the top. Sticky mode lets you detach entries as
+            floating windows that stay visible while you work in other apps.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <line x1="8" y1="21" x2="16" y2="21" />
+              <line x1="12" y1="17" x2="12" y2="21" />
+            </svg></div>
+          <h3 data-i18n="feat_theme_title">Fluent Design theme</h3>
+          <p data-i18n="feat_theme_desc">Dark, light, or system-matched. Windows 11 Mica blur &amp; Windows 10 acrylic.
+            Adjustable font sizes, compact mode, and border toggles.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Captures ── -->
+    <section class="container" style="padding-top:0">
+      <div class="section-header" style="margin-bottom:2rem">
+        <p class="section-eyebrow" data-i18n="section_captures_eyebrow">Captures</p>
+        <h2 data-i18n="section_captures_title">Every format you copy.</h2>
+      </div>
+      <div class="captures-grid">
+        <div class="capture-badge"><span class="icon">&#9997;</span> <span data-i18n="capture_text">Plain Text</span>
+        </div>
+        <div class="capture-badge"><span class="icon">&#128247;</span> <span data-i18n="capture_image">Images</span>
+        </div>
+        <div class="capture-badge"><span class="icon">&#128196;</span> <span data-i18n="capture_html">Rich HTML</span>
+        </div>
+        <div class="capture-badge"><span class="icon">&#128194;</span> <span data-i18n="capture_files">Files</span>
+        </div>
+        <div class="capture-badge"><span class="icon">&#127912;</span> <span data-i18n="capture_gif">GIFs</span></div>
+        <div class="capture-badge"><span class="icon">&#128279;</span> <span data-i18n="capture_url">URLs</span></div>
+        <div class="capture-badge"><span class="icon">&lt;/&gt;</span> <span data-i18n="capture_code">Code</span></div>
+        <div class="capture-badge"><span class="icon">&#128206;</span> <span data-i18n="capture_color">Colors</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── How it works ── -->
+    <section id="how" class="container">
+      <div class="section-header">
+        <p class="section-eyebrow" data-i18n="section_how_eyebrow">How it works</p>
+        <h2 data-i18n="section_how_title">Three steps, zero friction.</h2>
+      </div>
+      <div class="steps">
+        <div class="step">
+          <span class="step-tag copy" data-i18n="step_copy_tag">Copy</span>
+          <h3 data-i18n="step_copy_title">Copy anything, anywhere</h3>
+          <p data-i18n="step_copy_desc">WinPaste silently records every clipboard change in the background. Text,
+            images, files, code — it all lands in your history with the source app tagged.</p>
+        </div>
+        <div class="step">
+          <span class="step-tag invoke" data-i18n="step_invoke_tag">Invoke</span>
+          <h3 data-i18n="step_invoke_title">Press the shortcut</h3>
+          <p data-i18n_html="step_invoke_desc">Hit <strong>Win+V</strong> (or your custom hotkey). The panel appears
+            right at your cursor — even inside Chrome, VS Code, or Excel. Your current app keeps focus. No interruption.
+          </p>
+        </div>
+        <div class="step">
+          <span class="step-tag paste" data-i18n="step_paste_tag">Paste</span>
+          <h3 data-i18n="step_paste_title">Select and paste</h3>
+          <p data-i18n_html="step_paste_desc">Navigate with arrow keys, type to search, press Enter to paste. Or use
+            <strong>Ctrl+Shift+0-9</strong> to quick-paste your 10 most recent items without opening the panel.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Spotlight ── -->
+    <section class="container">
+      <div class="spotlight">
+        <div class="spotlight-content">
+          <div class="spotlight-text">
+            <h2><span data-i18n="spotlight_title_before">The architecture that makes</span> <span
+                data-i18n="spotlight_title_accent">zero-focus</span> <span
+                data-i18n="spotlight_title_after">possible.</span></h2>
+            <p data-i18n_html="spotlight_p1">
+              WinPaste uses a low-level <strong>WH_KEYBOARD_LL</strong> hook combined with
+              <strong>WS_EX_NOACTIVATE</strong> window styling — the same technique that powers
+              the system Win+V overlay, but refined to actually work reliably. All hook
+              callbacks are fire-and-forget; heavy lifting is dispatched to async Tokio
+              workers so the input pipeline never stalls.
+            </p>
+            <p style="margin-top:1rem" data-i18n_html="spotlight_p2">
+              A <strong>Single Source of Truth</strong> state machine in Rust eliminates the race
+              conditions that plague clipboard managers — no more stuck modifier keys,
+              no more random keyboard failures after dismissing the panel.
+            </p>
+          </div>
+          <div class="spotlight-stat">
+            <div class="number" data-i18n="spotlight_stat_num">0</div>
+            <div class="label" data-i18n="spotlight_stat_label">keystrokes stolen.<br>Ever.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Download ── -->
+    <section id="download" class="container download">
+      <h2 data-i18n="download_title">Ready to upgrade your clipboard?</h2>
+      <p data-i18n="download_desc">Free, open source, Windows 10 and 11. No sign-up, no telemetry.</p>
+      <div class="download-card">
+        <a href="https://github.com/eq1024/WinPaste/releases/download/v{{VERSION}}/WinPaste_{{VERSION}}_x64-setup.exe"
+          class="btn btn-primary" style="font-size:1.05rem; padding:0.9rem 2.2rem;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          <span data-i18n="download_btn">Download for Windows</span>
+        </a>
+        <p class="download-info">
+          <span data-i18n="download_info">Version <span>v{{VERSION}}</span> &middot; Windows 10/11 &middot; x64 &middot;
+            ~4 MB</span>
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <span data-i18n="footer_copy">WinPaste; 2025 &middot; GNU Licensed</span>
+      <div class="footer-links">
+        <a href="https://github.com/eq1024/WinPaste" target="_blank" rel="noopener" data-i18n="footer_github">GitHub</a>
+        <a href="https://github.com/eq1024/WinPaste/releases" target="_blank" rel="noopener"
+          data-i18n="footer_releases">Releases</a>
+        <a href="https://github.com/jimuzhe/tiez-clipboard" target="_blank" rel="noopener"
+          data-i18n="footer_tiez">Inspired by Tiez</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      // ── i18n data ──
+      var I18N = {
+        zh: {
+          nav_features: '功能',
+          nav_how: '使用流程',
+          nav_github: 'GitHub',
+          nav_download: '下载',
+          hero_badge: 'Windows 10 / 11',
+          hero_title_before: '你的剪贴板，',
+          hero_title_accent: '不再被打断。',
+          hero_desc: '一款快速、轻量的 Windows 剪贴板增强工具，完美替代 Win+V。面板跟随光标弹出，绝不抢夺焦点，用完即走。',
+          hero_download_btn: '下载 v{{VERSION}}',
+          hero_github_btn: 'GitHub',
+          hero_license: '免费开源 · GNU 协议',
+          stat_memory_label: '内存占用',
+          stat_rust_label: 'Rust + Tauri 构建，安全极速',
+          stat_focus: '0',
+          stat_focus_label: '零焦点打断，始终如一',
+          section_features_eyebrow: '核心功能',
+          section_features_title: '你需要的，都在这里。',
+          section_features_desc: 'WinPaste 去除了所有冗余，每一项功能都经过日常使用的反复打磨。',
+          feat_focus_title: '零焦点打断',
+          feat_focus_desc: '面板弹出时绝不抢夺键盘焦点。无论你正在重命名文件、编辑表格还是写代码，当前操作不会被中断。',
+          feat_search_title: '极速搜索',
+          feat_search_desc: '按 Ctrl+F 或 / 键即可聚焦搜索框，支持按内容、类型、标签筛选，输入即搜，无延迟。',
+          feat_cursor_title: '智能光标追踪',
+          feat_cursor_desc: '通过 UIAutomation 接口精准获取光标位置，即使在 Chrome、VS Code、Electron 等自绘引擎应用中也能准确定位，面板始终出现在你需要的地方。',
+          feat_format_title: '多格式捕获',
+          feat_format_desc: '支持纯文本、富文本 HTML、图片、文件路径和 GIF 动图。每条记录都标注来源应用，一眼便知从哪复制。',
+          feat_privacy_title: '隐私保护',
+          feat_privacy_desc: '自动检测并脱敏手机号、身份证、邮箱和密码。支持自定义正则规则。敏感数据使用 AES 加密存储。',
+          feat_cloud_title: '云同步 (Beta)',
+          feat_cloud_desc: '通过 WebDAV 在多设备间同步剪贴板。支持自动定时同步和周期性全量快照备份。',
+          feat_sequential_title: '顺序粘贴模式',
+          feat_sequential_desc: '将多条内容加入队列，一键逐条粘贴。适合填表、批量处理结构化数据的场景。',
+          feat_pin_title: '置顶与贴图',
+          feat_pin_desc: '常用条目一键置顶。贴图模式可将任意内容独立悬浮，在切换应用时依然可见。',
+          feat_theme_title: 'Fluent Design 主题',
+          feat_theme_desc: '深色、浅色或跟随系统。支持 Windows 11 Mica 毛玻璃特效和 Win10 亚克力效果。字体大小、紧凑模式、边框均可自定义。',
+          section_captures_eyebrow: '支持格式',
+          section_captures_title: '你复制的每一种格式。',
+          capture_text: '纯文本',
+          capture_image: '图片',
+          capture_html: '富文本',
+          capture_files: '文件',
+          capture_gif: 'GIF',
+          capture_url: '链接',
+          capture_code: '代码',
+          capture_color: '颜色',
+          section_how_eyebrow: '使用流程',
+          section_how_title: '三步，零摩擦。',
+          step_copy_tag: '复制',
+          step_copy_title: '随时复制，静默记录',
+          step_copy_desc: 'WinPaste 在后台静默记录每次剪贴板变化。文本、图片、文件、代码——全部存入历史，并自动标记来源应用。',
+          step_invoke_tag: '呼出',
+          step_invoke_title: '按下快捷键',
+          step_invoke_desc: '按下 Win+V（或自定义快捷键），面板精准跟随当前光标位置弹出——即使在 Chrome、VS Code 或 Excel 中也不例外。当前应用不丢焦点，工作不被打断。',
+          step_paste_tag: '粘贴',
+          step_paste_title: '选择并粘贴',
+          step_paste_desc: '方向键导航，输入即搜，回车粘贴。也可以使用 Ctrl+Shift+0-9 在不打开面板的情况下直接粘贴最近的 10 条记录。',
+          spotlight_title_before: '实现',
+          spotlight_title_accent: '零焦点打断',
+          spotlight_title_after: '的底层架构。',
+          spotlight_p1: 'WinPaste 使用底层 WH_KEYBOARD_LL 键盘钩子配合 WS_EX_NOACTIVATE 窗口扩展样式——与系统 Win+V 叠加层相同的技术，但打磨得更加可靠。所有钩子回调均为"即发即忘"；繁重任务全部交给异步 Tokio Worker 处理，输入管线永不阻塞。',
+          spotlight_p2: 'Rust 核心的单一事实源 (SSOT) 状态机彻底消除了剪贴板管理器常见的竞态问题——再也不会出现修饰键卡死、关闭面板后键盘偶发失灵的 Bug。',
+          spotlight_stat_num: '0',
+          spotlight_stat_label: '次按键被拦截。',
+          download_title: '准备好升级你的剪贴板了吗？',
+          download_desc: '完全免费，开源，支持 Windows 10 和 11。无需注册，无遥测。',
+          download_btn: '下载 Windows 版本',
+          download_info: '版本 v{{VERSION}} · Windows 10/11 · x64 · ~4 MB',
+          footer_copy: 'WinPaste; 2025 · GNU 协议开源',
+          footer_github: 'GitHub',
+          footer_releases: '更新日志',
+          footer_tiez: '灵感来源于 Tiez'
+        },
+        en: {
+          nav_features: 'Features',
+          nav_how: 'How it works',
+          nav_github: 'GitHub',
+          nav_download: 'Download',
+          hero_badge: 'Windows 10 / 11',
+          hero_title_before: 'Your clipboard,',
+          hero_title_accent: 'uninterrupted.',
+          hero_desc: 'A fast, lightweight clipboard manager that replaces Win+V. Pops up at your cursor, never steals focus, and stays out of your way.',
+          hero_download_btn: 'Download v{{VERSION}}',
+          hero_github_btn: 'GitHub',
+          hero_license: 'Free & open source. GNU licensed.',
+          stat_memory_label: 'Memory footprint',
+          stat_rust_label: 'Built with Rust + Tauri for speed & safety',
+          stat_focus: '0',
+          stat_focus_label: 'Focus interruptions. Ever.',
+          section_features_eyebrow: 'Features',
+          section_features_title: "Everything you need, nothing you don't.",
+          section_features_desc: 'WinPaste strips away the bloat. Every feature earns its place through daily use.',
+          feat_focus_title: 'Zero focus interruption',
+          feat_focus_desc: 'The panel appears without stealing keyboard focus. Your current work — renaming files, editing cells, typing code — is never disrupted.',
+          feat_search_title: 'Instant search',
+          feat_search_desc: 'Hit Ctrl+F or / to focus the search bar. Filter by content, type, or tags. Results update as you type — no delay.',
+          feat_cursor_title: 'Smart cursor tracking',
+          feat_cursor_desc: 'Uses UIAutomation to detect cursor position even in Chrome, VS Code, and Electron apps where traditional APIs fail. The panel always appears exactly where you need it.',
+          feat_format_title: 'Multi-format capture',
+          feat_format_desc: 'Captures plain text, rich HTML, images, file paths, and GIFs. Each entry shows its source application so you know exactly where it came from.',
+          feat_privacy_title: 'Privacy protection',
+          feat_privacy_desc: 'Auto-detects and masks phone numbers, ID cards, emails, and passwords. Add custom regex rules. Sensitive data is AES-encrypted at rest.',
+          feat_cloud_title: 'Cloud sync (Beta)',
+          feat_cloud_desc: 'Sync your clipboard across devices using WebDAV. Auto-sync on a schedule with configurable intervals. Full snapshot backups for safety.',
+          feat_sequential_title: 'Sequential paste mode',
+          feat_sequential_desc: 'Queue up multiple items and paste them one by one with a single hotkey. Perfect for filling forms or copying structured data.',
+          feat_pin_title: 'Pin & sticky mode',
+          feat_pin_desc: 'Pin frequently-used items to the top. Sticky mode lets you detach entries as floating windows that stay visible while you work in other apps.',
+          feat_theme_title: 'Fluent Design theme',
+          feat_theme_desc: 'Dark, light, or system-matched. Windows 11 Mica blur & Windows 10 acrylic. Adjustable font sizes, compact mode, and border toggles.',
+          section_captures_eyebrow: 'Captures',
+          section_captures_title: 'Every format you copy.',
+          capture_text: 'Plain Text',
+          capture_image: 'Images',
+          capture_html: 'Rich HTML',
+          capture_files: 'Files',
+          capture_gif: 'GIFs',
+          capture_url: 'URLs',
+          capture_code: 'Code',
+          capture_color: 'Colors',
+          section_how_eyebrow: 'How it works',
+          section_how_title: 'Three steps, zero friction.',
+          step_copy_tag: 'Copy',
+          step_copy_title: 'Copy anything, anywhere',
+          step_copy_desc: 'WinPaste silently records every clipboard change in the background. Text, images, files, code — it all lands in your history with the source app tagged.',
+          step_invoke_tag: 'Invoke',
+          step_invoke_title: 'Press the shortcut',
+          step_invoke_desc: 'Hit Win+V (or your custom hotkey). The panel appears right at your cursor — even inside Chrome, VS Code, or Excel. Your current app keeps focus. No interruption.',
+          step_paste_tag: 'Paste',
+          step_paste_title: 'Select and paste',
+          step_paste_desc: 'Navigate with arrow keys, type to search, press Enter to paste. Or use Ctrl+Shift+0-9 to quick-paste your 10 most recent items without opening the panel.',
+          spotlight_title_before: 'The architecture that makes',
+          spotlight_title_accent: 'zero-focus',
+          spotlight_title_after: 'possible.',
+          spotlight_p1: 'WinPaste uses a low-level WH_KEYBOARD_LL hook combined with WS_EX_NOACTIVATE window styling — the same technique that powers the system Win+V overlay, but refined to actually work reliably. All hook callbacks are fire-and-forget; heavy lifting is dispatched to async Tokio workers so the input pipeline never stalls.',
+          spotlight_p2: 'A Single Source of Truth state machine in Rust eliminates the race conditions that plague clipboard managers — no more stuck modifier keys, no more random keyboard failures after dismissing the panel.',
+          spotlight_stat_num: '0',
+          spotlight_stat_label: 'keystrokes stolen.<br>Ever.',
+          download_title: 'Ready to upgrade your clipboard?',
+          download_desc: 'Free, open source, Windows 10 and 11. No sign-up, no telemetry.',
+          download_btn: 'Download for Windows',
+          download_info: 'Version v{{VERSION}} &middot; Windows 10/11 &middot; x64 &middot; ~4 MB',
+          footer_copy: 'WinPaste; 2025 &middot; GNU Licensed',
+          footer_github: 'GitHub',
+          footer_releases: 'Releases',
+          footer_tiez: 'Inspired by Tiez'
+        }
+      };
+
+      var VERSION = '1.6.5'; // fallback; replaced by CI
+      var langToggle = document.getElementById('langToggle');
+
+      // ── Detect language ──
+      var saved = localStorage.getItem('winpaste-lang');
+      var browserLang = (navigator.language || '').slice(0, 2);
+      var currentLang = saved || (browserLang === 'zh' ? 'zh' : 'en');
+
+      function setLang(lang) {
+        currentLang = lang;
+        localStorage.setItem('winpaste-lang', lang);
+        langToggle.textContent = lang === 'zh' ? '中' : 'EN';
+        langToggle.setAttribute('aria-label', lang === 'zh' ? 'Switch to English' : '切换到中文');
+        document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+        applyLanguage(lang);
+      }
+
+      function applyLanguage(lang) {
+        var t = I18N[lang];
+        // text content
+        document.querySelectorAll('[data-i18n]').forEach(function (el) {
+          var key = el.getAttribute('data-i18n');
+          if (t[key] !== undefined) {
+            el.textContent = t[key].replace(/\{\{VERSION\}\}/g, VERSION);
+          }
+        });
+        // HTML content (elements that embed <kbd>, <strong> etc.)
+        document.querySelectorAll('[data-i18n_html]').forEach(function (el) {
+          var key = el.getAttribute('data-i18n_html');
+          if (t[key] !== undefined) {
+            el.innerHTML = t[key].replace(/\{\{VERSION\}\}/g, VERSION);
+          }
+        });
+        // Update page title
+        if (lang === 'zh') {
+          document.title = 'WinPaste — 你的剪贴板，不再被打断。';
+          document.querySelector('meta[name="description"]').setAttribute('content', '一款快速、轻量的 Windows 剪贴板增强工具，完美替代 Win+V。零焦点打断，光标感知弹出，全键盘操作。基于 Rust 和 Tauri 构建。');
+        } else {
+          document.title = 'WinPaste — Clipboard, uninterrupted.';
+          document.querySelector('meta[name="description"]').setAttribute('content', 'A fast, lightweight Windows clipboard manager. Zero focus interruption, cursor-aware popup, keyboard-driven. Built with Rust and Tauri.');
+        }
+      }
+
+      langToggle.addEventListener('click', function () {
+        setLang(currentLang === 'zh' ? 'en' : 'zh');
+      });
+
+      // ── Init ──
+      setLang(currentLang);
+
+      // ── Replace VERSION placeholders everywhere ──
+      // (CI replaces {{VERSION}} at deploy time; this handles local dev)
+      (function injectVersion() {
+        // Fix href/src attributes — use getAttribute to avoid URL-encoding issues
+        document.querySelectorAll('a[href*="VERSION"]').forEach(function (el) {
+          var raw = el.getAttribute('href');
+          if (raw && raw.indexOf('{{VERSION}}') !== -1) {
+            el.setAttribute('href', raw.replace(/\{\{VERSION\}\}/g, VERSION));
+          }
+        });
+        // Fix any text nodes still containing the placeholder
+        document.querySelectorAll('[data-i18n]').forEach(function (el) {
+          if (el.textContent.indexOf('{{VERSION}}') !== -1) {
+            el.textContent = el.textContent.replace(/\{\{VERSION\}\}/g, VERSION);
+          }
+        });
+        document.querySelectorAll('[data-i18n_html]').forEach(function (el) {
+          if (el.innerHTML.indexOf('{{VERSION}}') !== -1) {
+            el.innerHTML = el.innerHTML.replace(/\{\{VERSION\}\}/g, VERSION);
+          }
+        });
+        // Fallback: walk all text nodes
+        var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+        var textNodes = [];
+        while (walker.nextNode()) textNodes.push(walker.currentNode);
+        textNodes.forEach(function (node) {
+          if (node.nodeValue && node.nodeValue.indexOf('{{VERSION}}') !== -1) {
+            node.nodeValue = node.nodeValue.replace(/\{\{VERSION\}\}/g, VERSION);
+          }
+        });
+      })();
+
+      // ── 3D Tilt effect ──
+      (function () {
+        var card = document.getElementById('tiltCard');
+        if (!card) return;
+        var ticking = false;
+
+        card.addEventListener('mousemove', function (e) {
+          if (ticking) return;
+          ticking = true;
+          requestAnimationFrame(function () {
+            var rect = card.getBoundingClientRect();
+            var centerX = rect.left + rect.width / 2;
+            var centerY = rect.top + rect.height / 2;
+            var percentX = (e.clientX - centerX) / (rect.width / 2);
+            var percentY = (e.clientY - centerY) / (rect.height / 2);
+            // Clamp to [-1, 1]
+            percentX = Math.max(-1, Math.min(1, percentX));
+            percentY = Math.max(-1, Math.min(1, percentY));
+
+            var baseRotateY = -8;
+            var baseRotateX = 3;
+            var tilt = 12; // additional max tilt from mouse
+            var rotateY = baseRotateY + percentX * tilt;
+            var rotateX = baseRotateX + -percentY * tilt;
+
+            card.style.transform = 'rotateY(' + rotateY + 'deg) rotateX(' + rotateX + 'deg) scale3d(1.02, 1.02, 1.02)';
+
+            // Move glare
+            card.style.setProperty('--glare-x', (percentX * 45 + 50) + '%');
+            card.style.setProperty('--glare-y', (percentY * 45 + 50) + '%');
+
+            // Dynamic shadow
+            var shX = -percentX * 20;
+            var shY = percentY * 10 + 25;
+            var shBlur = 50 + Math.abs(percentX) * 20;
+            card.style.boxShadow =
+              shX + 'px ' + shY + 'px ' + shBlur + 'px rgba(0,0,0,0.55), ' +
+              '0 0 0 1px rgba(255,255,255,0.06), ' +
+              '0 0 80px rgba(248,109,20,' + (0.04 + Math.abs(percentX) * 0.06).toFixed(2) + ')';
+
+            ticking = false;
+          });
+        });
+
+        card.addEventListener('mouseleave', function () {
+          card.style.transform = 'rotateY(-8deg) rotateX(3deg) scale3d(1.01, 1.01, 1.01)';
+          card.style.boxShadow = '-8px 10px 50px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06), 0 0 80px rgba(248,109,20,0.04)';
+          card.style.setProperty('--glare-x', '35%');
+          card.style.setProperty('--glare-y', '45%');
+        });
+      })();
+    })();
+  </script>
+
+</body>
+
+</html>
