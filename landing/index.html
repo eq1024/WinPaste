@@ -4,9 +4,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WinPaste — Clipboard, uninterrupted.</title>
+  <title>WinPaste — 轻量高效的 Windows 剪贴板工具</title>
   <meta name="description"
-    content="A fast, lightweight Windows clipboard manager. Zero focus interruption, cursor-aware popup, keyboard-driven. Built with Rust and Tauri.">
+    content="一款快速、轻量的 Windows 剪贴板增强工具。键盘驱动、光标感知、多格式捕获。基于 Rust 和 Tauri 构建。">
   <link rel="icon" href="logo.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -823,10 +823,9 @@
           <span class="hero-badge-dot"></span> <span data-i18n="hero_badge">Windows 10 / 11</span>
         </div>
         <h1><span data-i18n="hero_title_before">Your clipboard,</span> <em
-            data-i18n="hero_title_accent">uninterrupted.</em></h1>
+            data-i18n="hero_title_accent">reimagined.</em></h1>
         <p class="hero-desc" data-i18n="hero_desc">
-          A fast, lightweight clipboard manager that replaces Win+V. Pops up at your cursor, never steals focus, and
-          stays out of your way.
+          A lightweight, keyboard-driven clipboard manager for Windows. Built for speed. Designed for flow.
         </p>
         <div class="hero-actions">
           <a href="#download" class="btn btn-primary">
@@ -868,8 +867,8 @@
           <div class="lbl" data-i18n="stat_rust_label">Built for speed &amp; safety</div>
         </div>
         <div class="stat-item">
-          <div class="num" data-i18n="stat_focus">0</div>
-          <div class="lbl" data-i18n="stat_focus_label">Focus interruptions. Ever.</div>
+          <div class="num" data-i18n="stat_focus">GNU</div>
+          <div class="lbl" data-i18n="stat_focus_label">Free &amp; open source</div>
         </div>
       </div>
     </section>
@@ -885,14 +884,11 @@
       <div class="features-grid">
         <div class="feature-card">
           <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <line x1="3" y1="9" x2="21" y2="9" />
-              <line x1="9" y1="21" x2="9" y2="9" />
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
             </svg></div>
-          <h3 data-i18n="feat_focus_title">Zero focus interruption</h3>
-          <p data-i18n="feat_focus_desc">The panel appears without stealing keyboard focus. Your current work — renaming
-            files, editing cells, typing code — is never disrupted.</p>
+          <h3 data-i18n="feat_focus_title">Lightweight & fast</h3>
+          <p data-i18n="feat_focus_desc">Built with Rust. Under 10 MB memory footprint. Instant cold start, zero input lag — always responsive, never bloated.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -933,17 +929,6 @@
           <h3 data-i18n="feat_privacy_title">Privacy protection</h3>
           <p data-i18n="feat_privacy_desc">Auto-detects and masks phone numbers, ID cards, emails, and passwords. Add
             custom regex rules. Sensitive data is AES-encrypted at rest.</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round">
-              <path d="M12 2L2 7l10 5 10-5-10-5z" />
-              <path d="M2 17l10 5 10-5" />
-              <path d="M2 12l10 5 10-5" />
-            </svg></div>
-          <h3 data-i18n="feat_cloud_title">Cloud sync (Beta)</h3>
-          <p data-i18n="feat_cloud_desc">Sync your clipboard across devices using WebDAV. Auto-sync on a schedule with
-            configurable intervals. Full snapshot backups for safety.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1038,25 +1023,24 @@
       <div class="spotlight">
         <div class="spotlight-content">
           <div class="spotlight-text">
-            <h2><span data-i18n="spotlight_title_before">The architecture that makes</span> <span
-                data-i18n="spotlight_title_accent">zero-focus</span> <span
-                data-i18n="spotlight_title_after">possible.</span></h2>
+            <h2><span data-i18n="spotlight_title_before">Rust-powered.</span> <span
+                data-i18n="spotlight_title_accent">Reliable by design.</span></h2>
             <p data-i18n_html="spotlight_p1">
-              WinPaste uses a low-level <strong>WH_KEYBOARD_LL</strong> hook combined with
-              <strong>WS_EX_NOACTIVATE</strong> window styling — the same technique that powers
-              the system Win+V overlay, but refined to actually work reliably. All hook
-              callbacks are fire-and-forget; heavy lifting is dispatched to async Tokio
-              workers so the input pipeline never stalls.
+              WinPaste's core engine is built in <strong>Rust</strong> — memory-safe, no GC pauses.
+              A low-level <strong>WH_KEYBOARD_LL</strong> hook combined with
+              <strong>WS_EX_NOACTIVATE</strong> window styling runs fire-and-forget;
+              heavy lifting is dispatched to async <strong>Tokio</strong> workers so the
+              input pipeline never stalls.
             </p>
             <p style="margin-top:1rem" data-i18n_html="spotlight_p2">
-              A <strong>Single Source of Truth</strong> state machine in Rust eliminates the race
+              A <strong>Single Source of Truth</strong> (SSOT) state machine eliminates the race
               conditions that plague clipboard managers — no more stuck modifier keys,
-              no more random keyboard failures after dismissing the panel.
+              no more random keyboard failures.
             </p>
           </div>
           <div class="spotlight-stat">
-            <div class="number" data-i18n="spotlight_stat_num">0</div>
-            <div class="label" data-i18n="spotlight_stat_label">keystrokes stolen.<br>Ever.</div>
+            <div class="number" data-i18n="spotlight_stat_num">&lt;10</div>
+            <div class="label" data-i18n="spotlight_stat_label">MB footprint</div>
           </div>
         </div>
       </div>
@@ -1109,20 +1093,20 @@
           nav_download: '下载',
           hero_badge: 'Windows 10 / 11',
           hero_title_before: '你的剪贴板，',
-          hero_title_accent: '不再被打断。',
-          hero_desc: '一款快速、轻量的 Windows 剪贴板增强工具，完美替代 Win+V。面板跟随光标弹出，绝不抢夺焦点，用完即走。',
+          hero_title_accent: '如虎添翼。',
+          hero_desc: '一款轻量、高效的 Windows 剪贴板增强工具。键盘全导航，光标精准跟随，多格式捕获，完美融入你的工作流。',
           hero_download_btn: '下载 v{{VERSION}}',
           hero_github_btn: 'GitHub',
           hero_license: '免费开源 · GNU 协议',
           stat_memory_label: '内存占用',
           stat_rust_label: 'Rust + Tauri 构建，安全极速',
-          stat_focus: '0',
-          stat_focus_label: '零焦点打断，始终如一',
+          stat_focus: 'GNU',
+          stat_focus_label: '免费开源，持续迭代',
           section_features_eyebrow: '核心功能',
           section_features_title: '你需要的，都在这里。',
           section_features_desc: 'WinPaste 去除了所有冗余，每一项功能都经过日常使用的反复打磨。',
-          feat_focus_title: '零焦点打断',
-          feat_focus_desc: '面板弹出时绝不抢夺键盘焦点。无论你正在重命名文件、编辑表格还是写代码，当前操作不会被中断。',
+          feat_focus_title: '极致轻快',
+          feat_focus_desc: '基于 Rust 构建，内存占用不足 10 MB。冷启动即开即用，输入管线永不阻塞，流畅如一。',
           feat_search_title: '极速搜索',
           feat_search_desc: '按 Ctrl+F 或 / 键即可聚焦搜索框，支持按内容、类型、标签筛选，输入即搜，无延迟。',
           feat_cursor_title: '智能光标追踪',
@@ -1130,10 +1114,7 @@
           feat_format_title: '多格式捕获',
           feat_format_desc: '支持纯文本、富文本 HTML、图片、文件路径和 GIF 动图。每条记录都标注来源应用，一眼便知从哪复制。',
           feat_privacy_title: '隐私保护',
-          feat_privacy_desc: '自动检测并脱敏手机号、身份证、邮箱和密码。支持自定义正则规则。敏感数据使用 AES 加密存储。',
-          feat_cloud_title: '云同步 (Beta)',
-          feat_cloud_desc: '通过 WebDAV 在多设备间同步剪贴板。支持自动定时同步和周期性全量快照备份。',
-          feat_sequential_title: '顺序粘贴模式',
+          feat_privacy_desc: '自动检测并脱敏手机号、身份证、邮箱和密码。支持自定义正则规则。敏感数据使用 AES 加密存储。',          feat_sequential_title: '顺序粘贴模式',
           feat_sequential_desc: '将多条内容加入队列，一键逐条粘贴。适合填表、批量处理结构化数据的场景。',
           feat_pin_title: '置顶与贴图',
           feat_pin_desc: '常用条目一键置顶。贴图模式可将任意内容独立悬浮，在切换应用时依然可见。',
@@ -1156,17 +1137,17 @@
           step_copy_desc: 'WinPaste 在后台静默记录每次剪贴板变化。文本、图片、文件、代码——全部存入历史，并自动标记来源应用。',
           step_invoke_tag: '呼出',
           step_invoke_title: '按下快捷键',
-          step_invoke_desc: '按下 Win+V（或自定义快捷键），面板精准跟随当前光标位置弹出——即使在 Chrome、VS Code 或 Excel 中也不例外。当前应用不丢焦点，工作不被打断。',
+          step_invoke_desc: '按下 Win+V（或自定义快捷键），面板精准跟随当前光标位置弹出——即使在 Chrome、VS Code 或 Excel 中也不例外。即呼即用，行云流水。',
           step_paste_tag: '粘贴',
           step_paste_title: '选择并粘贴',
           step_paste_desc: '方向键导航，输入即搜，回车粘贴。也可以使用 Ctrl+Shift+0-9 在不打开面板的情况下直接粘贴最近的 10 条记录。',
-          spotlight_title_before: '实现',
-          spotlight_title_accent: '零焦点打断',
-          spotlight_title_after: '的底层架构。',
-          spotlight_p1: 'WinPaste 使用底层 WH_KEYBOARD_LL 键盘钩子配合 WS_EX_NOACTIVATE 窗口扩展样式——与系统 Win+V 叠加层相同的技术，但打磨得更加可靠。所有钩子回调均为"即发即忘"；繁重任务全部交给异步 Tokio Worker 处理，输入管线永不阻塞。',
-          spotlight_p2: 'Rust 核心的单一事实源 (SSOT) 状态机彻底消除了剪贴板管理器常见的竞态问题——再也不会出现修饰键卡死、关闭面板后键盘偶发失灵的 Bug。',
-          spotlight_stat_num: '0',
-          spotlight_stat_label: '次按键被拦截。',
+          spotlight_title_before: 'Rust 内核，',
+          spotlight_title_accent: '天生可靠。',
+          spotlight_title_after: '',
+          spotlight_p1: 'WinPaste 采用 Rust 构建核心引擎——内存安全、无 GC 停顿。底层 WH_KEYBOARD_LL 键盘钩子配合 WS_EX_NOACTIVATE 窗口样式，所有回调即发即忘，繁重任务移交异步 Tokio Worker 处理，输入管线永不阻塞。',
+          spotlight_p2: '核心采用单一事实源 (SSOT) 状态机架构，彻底消除剪贴板管理器常见的竞态问题——再也不会出现修饰键卡死、关闭面板后键盘偶发失灵的情况。',
+          spotlight_stat_num: '<10',
+          spotlight_stat_label: 'MB 内存占用',
           download_title: '准备好升级你的剪贴板了吗？',
           download_desc: '完全免费，开源，支持 Windows 10 和 11。无需注册，无遥测。',
           download_btn: '下载 Windows 版本',
@@ -1183,20 +1164,20 @@
           nav_download: 'Download',
           hero_badge: 'Windows 10 / 11',
           hero_title_before: 'Your clipboard,',
-          hero_title_accent: 'uninterrupted.',
-          hero_desc: 'A fast, lightweight clipboard manager that replaces Win+V. Pops up at your cursor, never steals focus, and stays out of your way.',
+          hero_title_accent: 'reimagined.',
+          hero_desc: 'A lightweight, keyboard-driven clipboard manager for Windows. Built for speed. Designed for flow.',
           hero_download_btn: 'Download v{{VERSION}}',
           hero_github_btn: 'GitHub',
           hero_license: 'Free & open source. GNU licensed.',
           stat_memory_label: 'Memory footprint',
           stat_rust_label: 'Built with Rust + Tauri for speed & safety',
-          stat_focus: '0',
-          stat_focus_label: 'Focus interruptions. Ever.',
+          stat_focus: 'GNU',
+          stat_focus_label: 'Free & open source',
           section_features_eyebrow: 'Features',
           section_features_title: "Everything you need, nothing you don't.",
           section_features_desc: 'WinPaste strips away the bloat. Every feature earns its place through daily use.',
-          feat_focus_title: 'Zero focus interruption',
-          feat_focus_desc: 'The panel appears without stealing keyboard focus. Your current work — renaming files, editing cells, typing code — is never disrupted.',
+          feat_focus_title: 'Lightweight & fast',
+          feat_focus_desc: 'Built with Rust. Under 10 MB memory footprint. Instant cold start, zero input lag — always responsive, never bloated.',
           feat_search_title: 'Instant search',
           feat_search_desc: 'Hit Ctrl+F or / to focus the search bar. Filter by content, type, or tags. Results update as you type — no delay.',
           feat_cursor_title: 'Smart cursor tracking',
@@ -1204,10 +1185,7 @@
           feat_format_title: 'Multi-format capture',
           feat_format_desc: 'Captures plain text, rich HTML, images, file paths, and GIFs. Each entry shows its source application so you know exactly where it came from.',
           feat_privacy_title: 'Privacy protection',
-          feat_privacy_desc: 'Auto-detects and masks phone numbers, ID cards, emails, and passwords. Add custom regex rules. Sensitive data is AES-encrypted at rest.',
-          feat_cloud_title: 'Cloud sync (Beta)',
-          feat_cloud_desc: 'Sync your clipboard across devices using WebDAV. Auto-sync on a schedule with configurable intervals. Full snapshot backups for safety.',
-          feat_sequential_title: 'Sequential paste mode',
+          feat_privacy_desc: 'Auto-detects and masks phone numbers, ID cards, emails, and passwords. Add custom regex rules. Sensitive data is AES-encrypted at rest.',          feat_sequential_title: 'Sequential paste mode',
           feat_sequential_desc: 'Queue up multiple items and paste them one by one with a single hotkey. Perfect for filling forms or copying structured data.',
           feat_pin_title: 'Pin & sticky mode',
           feat_pin_desc: 'Pin frequently-used items to the top. Sticky mode lets you detach entries as floating windows that stay visible while you work in other apps.',
@@ -1230,17 +1208,17 @@
           step_copy_desc: 'WinPaste silently records every clipboard change in the background. Text, images, files, code — it all lands in your history with the source app tagged.',
           step_invoke_tag: 'Invoke',
           step_invoke_title: 'Press the shortcut',
-          step_invoke_desc: 'Hit Win+V (or your custom hotkey). The panel appears right at your cursor — even inside Chrome, VS Code, or Excel. Your current app keeps focus. No interruption.',
+          step_invoke_desc: 'Hit Win+V (or your custom hotkey). The panel appears right at your cursor — even inside Chrome, VS Code, or Excel. Instant and seamless.',
           step_paste_tag: 'Paste',
           step_paste_title: 'Select and paste',
           step_paste_desc: 'Navigate with arrow keys, type to search, press Enter to paste. Or use Ctrl+Shift+0-9 to quick-paste your 10 most recent items without opening the panel.',
-          spotlight_title_before: 'The architecture that makes',
-          spotlight_title_accent: 'zero-focus',
-          spotlight_title_after: 'possible.',
-          spotlight_p1: 'WinPaste uses a low-level WH_KEYBOARD_LL hook combined with WS_EX_NOACTIVATE window styling — the same technique that powers the system Win+V overlay, but refined to actually work reliably. All hook callbacks are fire-and-forget; heavy lifting is dispatched to async Tokio workers so the input pipeline never stalls.',
-          spotlight_p2: 'A Single Source of Truth state machine in Rust eliminates the race conditions that plague clipboard managers — no more stuck modifier keys, no more random keyboard failures after dismissing the panel.',
-          spotlight_stat_num: '0',
-          spotlight_stat_label: 'keystrokes stolen.<br>Ever.',
+          spotlight_title_before: 'Rust-powered.',
+          spotlight_title_accent: 'Reliable by design.',
+          spotlight_title_after: '',
+          spotlight_p1: "WinPaste's core engine is built in Rust — memory-safe, no GC pauses. A low-level WH_KEYBOARD_LL hook combined with WS_EX_NOACTIVATE window styling runs fire-and-forget; heavy lifting is dispatched to async Tokio workers so the input pipeline never stalls.",
+          spotlight_p2: 'A Single Source of Truth (SSOT) state machine eliminates the race conditions that plague clipboard managers — no more stuck modifier keys, no more random keyboard failures.',
+          spotlight_stat_num: '<10',
+          spotlight_stat_label: 'MB footprint',
           download_title: 'Ready to upgrade your clipboard?',
           download_desc: 'Free, open source, Windows 10 and 11. No sign-up, no telemetry.',
           download_btn: 'Download for Windows',
@@ -1287,11 +1265,11 @@
         });
         // Update page title
         if (lang === 'zh') {
-          document.title = 'WinPaste — 你的剪贴板，不再被打断。';
-          document.querySelector('meta[name="description"]').setAttribute('content', '一款快速、轻量的 Windows 剪贴板增强工具，完美替代 Win+V。零焦点打断，光标感知弹出，全键盘操作。基于 Rust 和 Tauri 构建。');
+          document.title = 'WinPaste — 轻量高效的 Windows 剪贴板工具';
+          document.querySelector('meta[name="description"]').setAttribute('content', '一款快速、轻量的 Windows 剪贴板增强工具。键盘驱动、光标感知、多格式捕获。基于 Rust 和 Tauri 构建。');
         } else {
-          document.title = 'WinPaste — Clipboard, uninterrupted.';
-          document.querySelector('meta[name="description"]').setAttribute('content', 'A fast, lightweight Windows clipboard manager. Zero focus interruption, cursor-aware popup, keyboard-driven. Built with Rust and Tauri.');
+          document.title = 'WinPaste — Smarter clipboard for Windows';
+          document.querySelector('meta[name="description"]').setAttribute('content', 'A fast, lightweight Windows clipboard manager. Keyboard-driven, cursor-aware, multi-format capture. Built with Rust and Tauri.');
         }
       }
 

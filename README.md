@@ -1,52 +1,103 @@
+<p align="center">
+  <img src="landing/logo.png" alt="WinPaste" width="64" height="64">
+</p>
 
+<h1 align="center">WinPaste</h1>
 
-## WinPaste
+<p align="center">
+  一款快速、轻量的 Windows 剪贴板增强工具，完美替代 <kbd>Win+V</kbd>。<br>
+  面板跟随光标弹出，绝不抢夺焦点，用完即走。
+</p>
 
-一个快速、轻量且功能强大的 Windows 剪贴板增强工具。它能完美无缝替换系统自带的`Win+V`历史功能，让你无需学习即可上手。
+<p align="center">
+  <a href="https://github.com/eq1024/WinPaste/releases/latest"><img src="https://img.shields.io/github/v/release/eq1024/WinPaste?color=%23f86d14&label=下载" alt="Release"></a>
+  <a href="https://github.com/eq1024/WinPaste/blob/main/LICENSE"><img src="https://img.shields.io/badge/协议-GNU-orange" alt="License"></a>
+  <img src="https://img.shields.io/badge/平台-Windows%2010%20%7C%2011-blue" alt="Platform">
+</p>
 
-<img width="344" height="735" alt="image" src="https://github.com/user-attachments/assets/a0088ef9-e329-4901-967b-b7d3e86ed20f" />
+<p align="center">
+  <a href="https://eq1024.github.io/WinPaste/">官网</a> ·
+  <a href="https://github.com/eq1024/WinPaste/releases/latest">下载</a> ·
+  <a href="#-功能特性">功能</a> ·
+  <a href="#-开发">开发</a>
+</p>
 
+---
 
+## ✨ 功能特性
 
-------
+**极速搜索。** 按 <kbd>Ctrl+F</kbd> 或 <kbd>/</kbd> 聚焦搜索框。支持按内容、类型、标签筛选。输入即搜，零延迟。
 
-### 特点？
+**智能光标追踪。** 通过 Windows UIAutomation 接口精准获取光标位置，即使在 Chrome、VS Code、Electron 等传统 API 失效的自绘引擎应用中也准确定位。面板始终出现在你需要的地方。
 
-专注于**核心剪贴板管理体验**，是追求**轻快、稳定、易维护**的“随身工具”。深度优化了基础架构，旨在让最常用的操作（呼出、选择、粘贴）无比顺滑可靠。
+**多格式捕获。** 纯文本、富文本 HTML、图片、文件路径、GIF 动图——全部捕获并标注来源应用。
 
-### 使用方式
+**隐私保护。** 自动检测并脱敏手机号、身份证、邮箱和密码。支持自定义正则规则。敏感数据 AES 加密存储。
 
-WinPaste 的设计理念是**“用完即走，绝不打断”**：
-- **精准呼出**：按下 `Win+V`（或自定义快捷键），面板会精准跟随当前光标位置弹出。
-- **无感交互**：呼出时**绝对不会抢占当前软件的焦点**（比如你在重命名文件夹、编辑 Excel 单元格时呼出，当前操作不会被打断）。
-- **快捷唤出搜索**：面板呼出后，按下 `Ctrl+F` 或 `/` 键即可瞬间激活并聚焦搜索框，进行极速内容过滤，同时普通英文字母和打字输入不会被拦截，保障正常工作的纯净度。
-- **键盘全导航**：使用 `上下方向键` 选择记录，按 `Enter` 一键粘贴。
-- **幽灵置顶模式**：点击面板上的“置顶”按钮后，面板会变成背景“幽灵”。你依然可以在底层的 VSCode 或 Word 里正常打字、使用所有快捷键，互不干涉；只有当你**主动用鼠标点击搜索框**时，才可以使用方向键选择面板条目。
+**全键盘操作。** 方向键导航，<kbd>回车</kbd> 粘贴，<kbd>Ctrl+Shift+0-9</kbd> 快速粘贴最近 10 条——无需鼠标。
 
-------
+**顺序粘贴模式。** 多条内容加入队列，一键逐条粘贴。适合填表、批量结构化数据场景。
 
-#### 1. 真正的“零焦点打断”架构
-- **无焦点呼出**：采用底层 `WS_EX_NOACTIVATE` 配合全局异步键盘钩子 (`WH_KEYBOARD_LL`)，超越了原生系统 Win+V 偶尔还会抢焦点的痛点，做到 100% 保护你的当前工作流。
-- **安全聚焦与极速搜索**：支持在未聚焦状态下一键通过 `Ctrl+F` 或 `/` 激活并强力聚焦搜索栏。在最自然、稳定的事件时序下自动唤醒并聚焦，保证输入法（IME）流畅运行，同时 100% 避免了对普通文本键入的非必要拦截。
+**置顶与贴图。** 常用条目一键置顶。可将任意内容独立悬浮，切换应用时始终可见。
 
-#### 2. 现代软件光标追踪
-- **UIA 降级探测**：传统的 Windows API 无法获取 Chrome、VSCode、飞书等基于 Skia/Electron 等自绘引擎的光标。WinPaste 引入了微软现代辅助功能接口 (UIAutomation)，实现了跨引擎的精准光标跟随定位。
+**Fluent Design 主题。** 深色、浅色或跟随系统。Windows 11 Mica 毛玻璃、Win10 亚克力效果。字体大小、紧凑模式、边框均可自定义。
 
-#### 3. 极度稳定的底层状态机 (SSOT)
-- **告别按键粘滞与失效**：将复杂且容易竞态的键盘/鼠标拦截状态，全部收敛到 Rust 底层的**单一事实源**。配合全局鼠标钩子越界销毁机制，彻底消灭了呼出面板后键盘偶发失灵的致命 Bug。
-- **无阻塞消息流**：所有钩子逻辑均极速放行，复杂的事件派发全部移交异步 Worker 处理，绝不会导致系统输入卡顿。
+**多语言。** 简体中文 · English · 繁體中文
 
-#### 4. 更干净的代码架构
-- **解耦冗余状态**：移除了原版中导致“一处小改动，整页大重绘”的巨石前端状态，改用原子化管理。
-- **移除过载特性**：去除了 AI、剪贴板同步等重量级功能，回归纯粹的剪贴板效率工具本质。
+## 🎯 使用方式
 
+1. **复制** — WinPaste 在后台静默记录每次剪贴板变化。
+2. **呼出** — 按 <kbd>Win+V</kbd>（或自定义快捷键），面板跟随光标弹出，不抢焦点。
+3. **粘贴** — 方向键导航，输入即搜，<kbd>回车</kbd> 粘贴。
 
-### 是否会推出其他平台版本？
+## 📦 安装
 
->不会，其他平台有更专业的剪贴板管理工具。例如，macOS 有 Pasteboard，Linux 有 xclip 等。
+从 [Releases](https://github.com/eq1024/WinPaste/releases/latest) 下载最新版本：
 
-### 致谢与协议
+> 需要 Windows 10 或 11，x64。
 
-灵感源于 **[tiez](https://github.com/jimuzhe/tiez-clipboard)** 遵守**GNU** 开源协议。
+## 🛠 开发
 
-------
+```bash
+# 前置：Node.js 18+、Rust、Tauri CLI
+
+npm install
+npm run tauri:dev      # 开发模式，热重载 (Vite 端口 1422)
+npm run tauri:build    # 生产构建 (NSIS 安装包)
+npm run build:portable # 便携版构建
+
+# 仅检查
+npx tsc --noEmit       # TypeScript 类型检查
+cargo check            # Rust 检查 (在 src-tauri/ 下)
+npm run test:e2e       # Playwright e2e 测试
+```
+
+## 🏗 架构
+
+| 层 | 技术栈 |
+|-------|-------|
+| 前端 | React 19 + TypeScript + Vite |
+| 状态管理 | Zustand（3 个 Store：history、settings、UI） |
+| 样式 | Tailwind CSS + 自定义 Fluent 主题 |
+| 后端 | Tauri v2（Rust） |
+| 数据库 | SQLite（WAL 模式） |
+| 加密 | Windows DPAPI + AES |
+| 输入 | `WH_KEYBOARD_LL` / `WH_MOUSE_LL` 底层钩子 |
+| 光标定位 | UIAutomation 接口（兼容 Chrome、VSCode、Electron） |
+| 打包 | NSIS 安装包、便携版 zip |
+
+**关键架构决策：**
+- **`WS_EX_NOACTIVATE`** 窗口样式——面板弹出不抢焦点
+- **SSOT 单一事实源状态机**（Rust）——彻底消除竞态，不再有修饰键卡死
+- **非阻塞钩子**——回调即发即忘，繁重任务移交异步 Tokio Worker
+- 零遥测、零注册、零冗余
+
+## 📄 协议
+
+GNU General Public License。灵感来源于 [Tiez](https://github.com/jimuzhe/tiez-clipboard)。
+
+---
+
+<p align="center">
+  <sub>以 Rust、Tauri 和对细节的关注构建。</sub>
+</p>
