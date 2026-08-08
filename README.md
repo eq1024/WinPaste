@@ -10,7 +10,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/eq1024/WinPaste/releases/latest"><img src="https://img.shields.io/github/v/release/eq1024/WinPaste?color=%23f86d14&label=下载" alt="Release"></a>
   <a href="https://github.com/eq1024/WinPaste/blob/main/LICENSE"><img src="https://img.shields.io/badge/协议-GNU-orange" alt="License"></a>
   <img src="https://img.shields.io/badge/平台-Windows%2010%20%7C%2011-blue" alt="Platform">
 </p>
