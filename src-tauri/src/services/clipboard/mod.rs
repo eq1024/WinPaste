@@ -4,6 +4,7 @@ mod utils;
 pub use crate::database::DbState;
 use crate::app_state::SettingsState;
 use arboard::Clipboard;
+use image::ImageEncoder;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
@@ -265,14 +266,25 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                             monitor_state.last_text = content.clone();
                             
                             let settings = app.state::<SettingsState>();
-                            let mut should_process = false;
-                            if files.len() == 1 {
-                                let lower = files[0].to_lowercase();
-                                if lower.ends_with(".gif") || lower.ends_with(".png") || lower.ends_with(".jpg") || lower.ends_with(".jpeg") || lower.ends_with(".bmp") || lower.ends_with(".webp") {
-                                    should_process = true;
-                                }
-                            }
-                            if should_process || should_capture_file_entries(settings.capture_files.load(Ordering::Relaxed)) {
+                            // Image files are always captured — single or
+                            // multi-selection. Other file types follow the
+                            // "capture files" setting.
+                            let all_image_files = files.iter().all(|f| {
+                                let lower = f.to_lowercase();
+                                lower.ends_with(".gif")
+                                    || lower.ends_with(".png")
+                                    || lower.ends_with(".jpg")
+                                    || lower.ends_with(".jpeg")
+                                    || lower.ends_with(".jfif")
+                                    || lower.ends_with(".bmp")
+                                    || lower.ends_with(".webp")
+                                    // NOTE: .avif intentionally excluded — the image crate
+                                    // only ships an *encoder* for AVIF (no decoder), so
+                                    // pasting AVIF through the image pipeline would always
+                                    // fail. AVIF files stay plain files (CF_HDROP).
+                                    || lower.ends_with(".svg")
+                            });
+                            if all_image_files || should_capture_file_entries(settings.capture_files.load(Ordering::Relaxed)) {
                                 process_new_entry(&app, ClipboardData::Files(files), None, Some(source_snapshot.clone()));
                             }
                         }
@@ -356,7 +368,19 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                                     if let Some(img_buf) = image::RgbaImage::from_raw(image.width as u32, image.height as u32, image.bytes) {
                                         let mut bytes: Vec<u8> = Vec::new();
                                         let mut cursor = std::io::Cursor::new(&mut bytes);
-                                        if img_buf.write_to(&mut cursor, image::ImageFormat::Png).is_ok() {
+                                        // Fast PNG encoding — default compression made
+                                        // large screenshots delay capture.
+                                        let encoder = image::codecs::png::PngEncoder::new_with_quality(
+                                            &mut cursor,
+                                            image::codecs::png::CompressionType::Fast,
+                                            image::codecs::png::FilterType::NoFilter,
+                                        );
+                                        if encoder.write_image(
+                                            img_buf.as_raw(),
+                                            image.width as u32,
+                                            image.height as u32,
+                                            image::ExtendedColorType::Rgba8,
+                                        ).is_ok() {
                                             let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
                                             process_new_entry(&app, ClipboardData::Image { data_url: format!("data:image/png;base64,{}", b64) }, None, Some(source_snapshot.clone()));
                                             handled = true;

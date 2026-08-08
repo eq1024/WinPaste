@@ -429,6 +429,14 @@ const App = () => {
     return () => { unlisten.then((u) => u()); };
   }, [fetchStickies]);
 
+  // Refresh sticky panel when a sticky's content is edited (emits "sticky-updated")
+  useEffect(() => {
+    const unlisten = listen("sticky-updated", () => {
+      fetchStickies();
+    });
+    return () => { unlisten.then((u) => u()); };
+  }, [fetchStickies]);
+
   useEffect(() => {
     if (settingsLoaded) {
       fetchHistory(true);
@@ -519,7 +527,7 @@ const App = () => {
       onStickyCreated: fetchStickies
     });
 
-  const { clearHistory, clearStickies, handleResetSettings } = useAppActions({
+  const { clearHistory, handleResetSettings } = useAppActions({
     t,
     openConfirm,
     closeConfirm,
@@ -615,24 +623,8 @@ const App = () => {
       ...historyState,
       ...uiState,
       onToggleSticky: (enabled: boolean) => {
-        if (!enabled && stickyEntries.length > 0) {
-          openConfirm({
-            title: t("clear_stickies_title"),
-            message: t("clear_stickies_confirm"),
-            onConfirm: async () => {
-              try { await invoke("clear_all_stickies"); setStickyEntries([]); } catch (_) {}
-              settingsState.setStickyEnabled(false);
-              await invoke("save_setting", { key: "app.sticky_enabled", value: "false" });
-              closeConfirm();
-            },
-            onCancel: () => {
-              settingsState.setStickyEnabled(true);
-            },
-          });
-        } else {
-          settingsState.setStickyEnabled(enabled);
-          invoke("save_setting", { key: "app.sticky_enabled", value: String(enabled) });
-        }
+        settingsState.setStickyEnabled(enabled);
+        invoke("save_setting", { key: "app.sticky_enabled", value: String(enabled) });
       },
     } as any
   });
@@ -644,7 +636,6 @@ const App = () => {
         searchInputRef={searchInputRef}
         allTags={allTags}
         clearHistory={clearHistory}
-        clearStickies={stickyEnabled ? clearStickies : undefined}
       />
 
       <main

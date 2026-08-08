@@ -429,11 +429,11 @@ pub unsafe extern "system" fn keyboard_proc(n_code: i32, w_param: WPARAM, l_para
         if is_win_v_configured && vk == 0x56 {
             let win_down = (GetAsyncKeyState(VK_LWIN.0 as i32) as u16 & 0x8000 != 0) || (GetAsyncKeyState(VK_RWIN.0 as i32) as u16 & 0x8000 != 0);
             // 仅拦截精确的 Win+V，避免 Alt+Win+V 等组合被吞掉而无法传递给系统
-            let ctrl_down = (GetAsyncKeyState(VK_CONTROL.0 as i32) as u16 & 0x8000 != 0);
+            let ctrl_down = GetAsyncKeyState(VK_CONTROL.0 as i32) as u16 & 0x8000 != 0;
             let alt_down = (GetAsyncKeyState(VK_MENU.0 as i32) as u16 & 0x8000 != 0)
                 || (GetAsyncKeyState(0xA4i32) as u16 & 0x8000 != 0)
                 || (GetAsyncKeyState(0xA5i32) as u16 & 0x8000 != 0);
-            let shift_down = (GetAsyncKeyState(windows::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT.0 as i32) as u16 & 0x8000 != 0);
+            let shift_down = GetAsyncKeyState(windows::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT.0 as i32) as u16 & 0x8000 != 0;
             if win_down && !ctrl_down && !alt_down && !shift_down {
                 return LRESULT(1);
             }

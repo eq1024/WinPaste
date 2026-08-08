@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
+import { ClipboardPaste, Pin, PinOff, X } from "lucide-react";
 import type { StickyEntry } from "../../../shared/types/sticky";
 import { StickyManager } from "../StickyManager";
 
@@ -23,7 +24,18 @@ export default function StickyWindow() {
     const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
     const [showToolbar, setShowToolbar] = useState(false);
     const [pasteFeedback, setPasteFeedback] = useState(false);
+    const [saveError, setSaveError] = useState(false);
+    const saveErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Text stickies are directly editable: the draft mirrors entry.content
+    // and is flushed to the DB on blur / Ctrl+Enter.
+    const [draftContent, setDraftContent] = useState("");
     const toolbarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const moveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Latest DB values, read inside the debounced handlers without re-binding
+    // the native event listeners on every save.
+    const entryRef = useRef<StickyEntry | null>(null);
+    useEffect(() => { entryRef.current = entry; }, [entry]);
 
     // Apply body styling on mount — transparent, rounded, no overflow
     useEffect(() => {
@@ -75,19 +87,76 @@ export default function StickyWindow() {
             .then((data: any) => {
                 if (data) {
                     setEntry(data);
+                    setDraftContent(data.content);
                     setIsAlwaysOnTop(data.always_on_top);
+                } else {
+                    // Entry was deleted (e.g. clear-all left a stale window) — close self
+                    emit("sticky-closed", { id: stickyId }).catch(() => {});
+                    getCurrentWindow().close().catch(() => {});
                 }
             })
             .catch(console.error);
     }, [stickyId]);
 
-    // Paste: copy to clipboard first, then hide sticky and simulate paste keystroke
+    // Persist window position/size via native events (debounced) — reliable
+    // even when the mouse is released outside the window, unlike onMouseUp.
+    useEffect(() => {
+        if (stickyId === null || isNaN(stickyId)) return;
+        const win = getCurrentWindow();
+        const unlistenMoved = win.onMoved((event) => {
+            if (moveTimerRef.current) clearTimeout(moveTimerRef.current);
+            moveTimerRef.current = setTimeout(() => {
+                // Programmatic setPosition (restore/create) also fires
+                // onMoved — skip the write when the position already equals
+                // what we have in the DB.
+                const cur = entryRef.current;
+                if (cur && Math.round(cur.x) === Math.round(event.payload.x) && Math.round(cur.y) === Math.round(event.payload.y)) return;
+                StickyManager.updatePosition(stickyId, event.payload.x, event.payload.y);
+            }, 300);
+        });
+        const unlistenResized = win.onResized((event) => {
+            if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+            resizeTimerRef.current = setTimeout(() => {
+                const cur = entryRef.current;
+                if (cur && Math.round(cur.width) === Math.round(event.payload.width) && Math.round(cur.height) === Math.round(event.payload.height)) return;
+                StickyManager.updateSize(stickyId, event.payload.width, event.payload.height);
+            }, 300);
+        });
+        return () => {
+            unlistenMoved.then((u) => u());
+            unlistenResized.then((u) => u());
+            if (moveTimerRef.current) clearTimeout(moveTimerRef.current);
+            if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+        };
+    }, [stickyId]);
+
+    // Flush the editable draft to the DB when it changed. UI state and the
+    // "sticky-updated" event are only updated after a successful write — on
+    // failure the draft stays in the textarea and a short error hint appears.
+    const saveDraft = useCallback(async () => {
+        if (stickyId === null || isNaN(stickyId)) return;
+        if (!entry || entry.content === draftContent) return; // nothing changed
+        try {
+            await StickyManager.updateContent(stickyId, draftContent);
+            setEntry((prev) => (prev ? { ...prev, content: draftContent } : prev));
+            // Notify the main app so the sticky panel shows the updated content
+            emit("sticky-updated", { id: stickyId }).catch(() => {});
+        } catch (err) {
+            console.error("Save sticky edit failed:", err);
+            setSaveError(true);
+            if (saveErrorTimerRef.current) clearTimeout(saveErrorTimerRef.current);
+            saveErrorTimerRef.current = setTimeout(() => setSaveError(false), 3000);
+        }
+    }, [stickyId, entry, draftContent]);
+
+    // Paste: copy the current (possibly just-edited) content to clipboard,
+    // persist any pending edit, then hide sticky and simulate paste keystroke
     const handlePaste = useCallback(async () => {
         if (!entry || stickyId === null || isNaN(stickyId)) return;
         try {
             // First copy content to system clipboard
             await invoke("copy_to_clipboard", {
-                content: entry.content,
+                content: draftContent,
                 contentType: entry.content_type,
                 paste: false,
                 id: 0,
@@ -95,6 +164,7 @@ export default function StickyWindow() {
                 pasteWithFormat: false,
                 moveToTop: false,
             });
+            await saveDraft();
             // Then hide sticky, paste, and show again
             await invoke("paste_sticky_content", { id: stickyId });
             setPasteFeedback(true);
@@ -102,7 +172,7 @@ export default function StickyWindow() {
         } catch (err) {
             console.error("Paste failed:", err);
         }
-    }, [entry, stickyId]);
+    }, [entry, draftContent, saveDraft, stickyId]);
 
     const handleOpen = useCallback(async () => {
         if (!entry) return;
@@ -127,14 +197,13 @@ export default function StickyWindow() {
 
     const handleClose = useCallback(async () => {
         if (stickyId !== null && !isNaN(stickyId)) {
-            // Notify main app so the sticky panel refreshes
-            emit("sticky-closed", { id: stickyId }).catch(() => {});
+            // Delete first, then notify the main app so its list refresh
+            // does not race with (and show) a stale entry
             try { await invoke("delete_sticky", { id: stickyId }); } catch (_) {}
-        }
-        try { await getCurrentWindow().close(); } catch (_) {}
-        if (stickyId !== null && !isNaN(stickyId)) {
+            emit("sticky-closed", { id: stickyId }).catch(() => {});
             try { await invoke("close_sticky_window", { id: stickyId }); } catch (_) {}
         }
+        try { await getCurrentWindow().close(); } catch (_) {}
     }, [stickyId]);
 
     const handleMouseEnter = useCallback(() => {
@@ -146,15 +215,12 @@ export default function StickyWindow() {
         toolbarTimer.current = setTimeout(() => setShowToolbar(false), 600);
     }, []);
 
-    const handleDragEnd = useCallback(async () => {
-        if (stickyId === null || isNaN(stickyId)) return;
-        try {
-            const pos = await getCurrentWindow().outerPosition();
-            await StickyManager.updatePosition(stickyId, pos.x, pos.y);
-        } catch {
-            // Window may have been closed; ignore
+    const handleTextKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.key === "Enter" && e.ctrlKey) {
+            e.preventDefault();
+            saveDraft();
         }
-    }, [stickyId]);
+    }, [saveDraft]);
 
     if (!entry) {
         return (
@@ -228,29 +294,68 @@ export default function StickyWindow() {
                     }
                 }}
             >
-                <button className="sticky-toolbar-btn" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); handlePaste(); }} title="粘贴到光标处" style={{ ...btnBase, color: pasteFeedback ? "var(--accent-color, #0078d4)" : btnBase.color }}>📋</button>
-                <button className="sticky-toolbar-btn" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); toggleAlwaysOnTop(); }} title={isAlwaysOnTop ? "取消置顶" : "置顶"} style={{ ...btnBase, background: isAlwaysOnTop ? "var(--accent-color, #0078d4)" : btnBase.background, color: isAlwaysOnTop ? "#fff" : btnBase.color }}>📌</button>
-                <button className="sticky-toolbar-btn" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); handleClose(); }} title="关闭" style={{ ...btnBase, fontSize: 16 }}>✕</button>
+                <button className="sticky-toolbar-btn" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); handlePaste(); }} title="粘贴到光标处" style={{ ...btnBase, color: pasteFeedback ? "var(--accent-color, #0078d4)" : btnBase.color }}><ClipboardPaste size={14} /></button>
+                <button className="sticky-toolbar-btn" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); toggleAlwaysOnTop(); }} title={isAlwaysOnTop ? "取消置顶" : "置顶"} style={{ ...btnBase, background: isAlwaysOnTop ? "var(--accent-color, #0078d4)" : btnBase.background, color: isAlwaysOnTop ? "#fff" : btnBase.color }}>{isAlwaysOnTop ? <PinOff size={14} /> : <Pin size={14} />}</button>
+                <button className="sticky-toolbar-btn" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); handleClose(); }} title="关闭" style={btnBase}><X size={14} /></button>
             </div>
 
             <div
                 className="sticky-content"
                 style={{
-                    flex: 1, overflow: "auto",
+                    flex: 1, overflow: "hidden",
                     padding: "40px 12px 12px 12px",
                     display: "flex",
                     alignItems: isImage ? "center" : "flex-start",
                     justifyContent: isImage ? "center" : "flex-start",
                 }}
-                onMouseUp={handleDragEnd}
-                onDoubleClick={() => handleOpen()}
+                onDoubleClick={() => (isImage ? handleOpen() : undefined)}
             >
                 {isImage ? (
                     <img src={toImageSrc(entry.content)} alt="Sticky" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 6, userSelect: "none", pointerEvents: "none" }} draggable={false} />
                 ) : (
-                    <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 14, lineHeight: 1.6, color: "var(--text-primary, #1a1a1a)", userSelect: "text", width: "100%" }}>{entry.content}</div>
+                    // Text stickies are directly editable — changes are persisted on blur / Ctrl+Enter
+                    <textarea
+                        value={draftContent}
+                        onChange={(e) => setDraftContent(e.target.value)}
+                        onKeyDown={handleTextKeyDown}
+                        onBlur={saveDraft}
+                        spellCheck={false}
+                        style={{
+                            flex: 1,
+                            width: "100%",
+                            height: "100%",
+                            border: "none",
+                            outline: "none",
+                            resize: "none",
+                            background: "transparent",
+                            overflow: "auto",
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                            fontSize: 14,
+                            lineHeight: 1.6,
+                            fontFamily: "inherit",
+                            color: "var(--text-primary, #1a1a1a)",
+                            padding: 0,
+                        }}
+                    />
                 )}
             </div>
+
+            {saveError && (
+                <div style={{
+                    position: "absolute",
+                    bottom: 10, left: 12, right: 12,
+                    padding: "6px 10px",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    background: "rgba(200, 60, 60, 0.12)",
+                    border: "1px solid rgba(200, 60, 60, 0.35)",
+                    color: "var(--text-error, #c0392b)",
+                    textAlign: "center",
+                }}>
+                    保存失败，内容未写入
+                </div>
+            )}
         </div>
     );
 }

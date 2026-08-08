@@ -76,6 +76,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // crate::infrastructure::windows_api::drag_drop::register_emoji_drag_drop(app_handle.clone());
     
     // 7. Background Services & Monitors
+    crate::services::clipboard_ops::cleanup_svg_temp_files();
     start_services(app, &settings, app_handle.clone());
     
     // 8. Tray Setup
@@ -686,7 +687,10 @@ fn setup_tray(app: &App, hide_tray: bool) {
     let show_i = MenuItem::with_id(app, "show", "显示主界面", true, None::<&str>).unwrap();
     let quit_i = MenuItem::with_id(app, "quit", "退出 winpaste", true, None::<&str>).unwrap();
     let menu = Menu::with_items(app, &[&show_i, &quit_i]).unwrap();
-    let icon = tauri::image::Image::from_bytes(include_bytes!("../../icons/winpaste.png")).unwrap();
+    // Tray icon: extracted from the rounded-corner icon.ico (tray.png is
+    // transparent at the corners), so the tray shows the rounded design
+    // instead of the square winpaste.png.
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../../icons/tray.png")).unwrap();
 
     let tray = TrayIconBuilder::with_id("main_tray")
         .icon(icon)

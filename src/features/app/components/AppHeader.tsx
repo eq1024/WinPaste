@@ -9,7 +9,6 @@ import {
   Settings as SettingsIcon,
   Tag,
   Trash2,
-  StickyNote,
   X
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -23,7 +22,6 @@ interface AppHeaderProps {
   searchInputRef: RefObject<HTMLInputElement | null>;
   allTags: string[];
   clearHistory: () => void;
-  clearStickies?: () => void;
 }
 
 const AppHeader = ({
@@ -31,7 +29,6 @@ const AppHeader = ({
   searchInputRef,
   allTags,
   clearHistory,
-  clearStickies
 }: AppHeaderProps) => {
   const {
     showSettings,
@@ -113,7 +110,6 @@ const AppHeader = ({
 
         {!showSettings && !showTagManager && (
           <>
-            {clearStickies && <button className="btn-icon" title={t('clear_stickies') || '清除贴图'} onClick={clearStickies}><StickyNote size={16} /></button>}
             <button className="btn-icon" title={t('clear_history')} onClick={clearHistory}>
               <Trash2 size={16} />
             </button>

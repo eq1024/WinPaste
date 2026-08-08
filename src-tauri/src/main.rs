@@ -136,10 +136,10 @@ fn main() {
             app::commands::delete_sticky,
             app::commands::update_sticky_position,
             app::commands::update_sticky_size,
+            app::commands::update_sticky_content,
             app::commands::update_sticky_always_on_top,
             app::commands::close_sticky_window,
             app::commands::paste_sticky_content,
-            app::commands::clear_all_stickies,
 
             infrastructure::windows_api::apps::get_system_default_app,
             infrastructure::windows_api::apps::get_executable_icon,

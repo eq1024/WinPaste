@@ -76,6 +76,20 @@ export const StickyManager = {
     },
 
     async restoreAllStickies(entries: StickyEntry[]): Promise<void> {
+        // Continue the cascading offset from the restored stickies so new
+        // stickies don't overlap the ones restored at startup. Deleted
+        // stickies leave holes in the grid, so derive the highest occupied
+        // slot from the stored grid positions when possible (fall back to
+        // the entry count when positions were dragged off-grid).
+        let maxSlot = entries.length;
+        for (const e of entries) {
+            if (e.x >= 200 && e.y >= 200 && (e.x - 200) % 36 === 0 && (e.y - 200) % 36 === 0) {
+                const col = Math.round((e.x - 200) / 36);
+                const row = Math.round((e.y - 200) / 36);
+                maxSlot = Math.max(maxSlot, row * 5 + col + 1);
+            }
+        }
+        stickyCreateCounter = maxSlot;
         setTimeout(async () => {
             for (const entry of entries) {
                 const label = labelForId(entry.id);
@@ -136,6 +150,13 @@ export const StickyManager = {
         } catch (err) {
             console.error("Failed to update sticky size:", err);
         }
+    },
+
+    // Errors propagate to the caller: saveDraft must NOT update the UI or
+    // emit "sticky-updated" when the write failed, or the sticky window and
+    // the main panel would silently show different content.
+    async updateContent(id: number, content: string): Promise<void> {
+        await invoke("update_sticky_content", { id, content });
     },
 
     async updateAlwaysOnTop(id: number, enabled: boolean): Promise<void> {

@@ -1,7 +1,7 @@
 use tauri::{AppHandle, Manager, Emitter};
 use crate::domain::models::ClipboardEntry;
 use crate::app_state::{SettingsState, SessionHistory, AppDataDir, PasteQueue};
-use crate::database::DbState;
+use crate::database::{DbState, is_text_type};
 use crate::services::clipboard::utils::*;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -101,20 +101,49 @@ impl PipelineStage for DiscoveryStage {
                     let lower = path.to_lowercase();
                     if lower.ends_with(".gif") {
                          ("image".to_string(), path.clone(), None)
-                    } else if lower.ends_with(".png") || lower.ends_with(".jpg") || lower.ends_with(".jpeg") || lower.ends_with(".bmp") || lower.ends_with(".webp") {
+                    // .avif intentionally excluded: image crate has no AVIF
+                    // decoder, so embedded AVIF could never be pasted. It stays
+                    // a plain file (CF_HDROP).
+                    } else if lower.ends_with(".png") || lower.ends_with(".jpg") || lower.ends_with(".jpeg") || lower.ends_with(".jfif") || lower.ends_with(".bmp") || lower.ends_with(".webp") || lower.ends_with(".svg") {
                         if let Ok(metadata) = std::fs::metadata(path) {
                             // If file size > 1MB (1024 * 1024 bytes), just save path
                             if metadata.len() > 1024 * 1024 {
                                 ("image".to_string(), path.clone(), None)
                             } else if let Ok(img_data) = std::fs::read(path) {
-                                if let Ok(img) = image::load_from_memory(&img_data) {
-                                    let mut bytes: Vec<u8> = Vec::new();
-                                    let mut cursor = std::io::Cursor::new(&mut bytes);
-                                    if img.write_to(&mut cursor, image::ImageFormat::Png).is_ok() {
-                                        let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-                                        ("image".to_string(), format!("data:image/png;base64,{}", b64), None)
-                                    } else { ("image".to_string(), path.clone(), None) }
-                                } else { ("image".to_string(), path.clone(), None) }
+                                // Embed the original bytes directly — no decode /
+                                // re-encode needed. <img> renders any image MIME
+                                // and pasting converts to PNG at paste time. This
+                                // is near-instant; the old decode+re-encode took
+                                // seconds for ~1MB images and, combined with the
+                                // synchronous listener, dropped rapid successive
+                                // copies.
+                                //
+                                // Sanity-check the bytes by magic number first: a
+                                // renamed/corrupted file must not be embedded as
+                                // garbage (the history would show a broken image
+                                // and pasting it would error out). SVG is text and
+                                // intentionally bypassed — the image crate cannot
+                                // decode it, yet <img> renders it fine.
+                                let mime = if lower.ends_with(".jpg") || lower.ends_with(".jpeg") || lower.ends_with(".jfif") {
+                                    "image/jpeg"
+                                } else if lower.ends_with(".bmp") {
+                                    "image/bmp"
+                                } else if lower.ends_with(".webp") {
+                                    "image/webp"
+                                } else if lower.ends_with(".svg") {
+                                    "image/svg+xml"
+                                } else {
+                                    "image/png"
+                                };
+                                if lower.ends_with(".svg") || image::guess_format(&img_data).is_ok() {
+                                    let b64 = base64::engine::general_purpose::STANDARD.encode(img_data);
+                                    ("image".to_string(), format!("data:{};base64,{}", mime, b64), None)
+                                } else {
+                                    // Not a real image (renamed/corrupted file) —
+                                    // keep the path so pasting still works via
+                                    // CF_HDROP instead of failing to decode.
+                                    ("image".to_string(), path.clone(), None)
+                                }
                             } else { ("image".to_string(), path.clone(), None) }
                         } else { ("image".to_string(), path.clone(), None) }
                     } else if lower.ends_with(".mp4") || lower.ends_with(".mkv") || lower.ends_with(".avi") || lower.ends_with(".mov") || lower.ends_with(".wmv") || lower.ends_with(".flv") || lower.ends_with(".webm") {
@@ -171,6 +200,15 @@ impl PipelineStage for TransformationStage {
 
         // Normalization (already partially done but let's be thorough)
         entry.content = entry.content.trim().replace("\r\n", "\n");
+
+        // Sensitive Info Detection: mark entry as sensitive if it matches privacy rules
+        let protect_kinds = settings.privacy_protection_kinds.lock().unwrap().clone();
+        let custom_rules = settings.privacy_protection_custom_rules.lock().unwrap().clone();
+        if settings.privacy_protection.load(Ordering::Relaxed) && is_text_type(&entry.content_type) {
+            if contains_sensitive_info(&entry.content, &protect_kinds, &custom_rules) {
+                entry.tags.push("sensitive".to_string());
+            }
+        }
 
         // Rich Text Image Processing
         if let Some(html) = &entry.html_content {

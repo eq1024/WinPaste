@@ -16,6 +16,7 @@ pub trait StickyRepository {
     fn get_by_id(&self, id: i64) -> Result<Option<StickyEntry>, String>;
     fn update_position(&self, id: i64, x: i32, y: i32) -> Result<(), String>;
     fn update_size(&self, id: i64, width: i32, height: i32) -> Result<(), String>;
+    fn update_content(&self, id: i64, content: &str) -> Result<(), String>;
     fn update_always_on_top(&self, id: i64, enabled: bool) -> Result<(), String>;
     fn delete(&self, id: i64) -> Result<(), String>;
 }
@@ -120,6 +121,15 @@ impl StickyRepository for SqliteStickyRepository {
         conn.execute(
             "UPDATE sticky_windows SET width = ?1, height = ?2 WHERE id = ?3",
             params![width, height, id],
+        ).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    fn update_content(&self, id: i64, content: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE sticky_windows SET content = ?1 WHERE id = ?2",
+            params![content, id],
         ).map_err(|e| e.to_string())?;
         Ok(())
     }

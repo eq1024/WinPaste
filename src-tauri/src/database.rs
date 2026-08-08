@@ -101,20 +101,25 @@ pub fn save_image_to_file(data_url: &str, data_dir: &std::path::Path) -> Option<
     use std::io::Write;
     let parts: Vec<&str> = data_url.splitn(2, ',').collect();
     if parts.len() < 2 { return None; }
-    
+
     let decoded = base64::engine::general_purpose::STANDARD.decode(parts[1]).ok()?;
-    
+
     let attachments_dir = data_dir.join("attachments");
     if !attachments_dir.exists() {
         let _ = std::fs::create_dir_all(&attachments_dir);
     }
-    
+
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     use std::hash::{Hash, Hasher};
     decoded.hash(&mut hasher);
     let hash = hasher.finish();
-    
-    let file_name = format!("img_{:x}.png", hash);
+
+    // Use the MIME from the data URL for the extension: SVG bytes must not be
+    // stored with a .png name — pasting such an entry would produce a broken
+    // file (see clipboard_ops). Everything else keeps .png for compatibility.
+    let mime = parts[0].to_ascii_lowercase();
+    let ext = if mime.contains("svg") { "svg" } else { "png" };
+    let file_name = format!("img_{:x}.{}", hash, ext);
     let file_path = attachments_dir.join(&file_name);
     
     if !file_path.exists() {

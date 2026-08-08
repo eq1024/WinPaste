@@ -50,7 +50,9 @@ pub fn create_sticky(
         y,
         width,
         height,
-        always_on_top: false,
+        // New stickies are always-on-top by default so they're not hidden
+        // behind the main window (which is pinned); users can toggle via 📌
+        always_on_top: true,
         created_at: 0,
     };
     let id = state.sticky_repo.create(&entry)?;
@@ -80,6 +82,11 @@ pub fn update_sticky_position(state: State<'_, DbState>, id: i64, x: i32, y: i32
 #[tauri::command]
 pub fn update_sticky_size(state: State<'_, DbState>, id: i64, width: i32, height: i32) -> Result<(), String> {
     state.sticky_repo.update_size(id, width, height)
+}
+
+#[tauri::command]
+pub fn update_sticky_content(state: State<'_, DbState>, id: i64, content: String) -> Result<(), String> {
+    state.sticky_repo.update_content(id, &content)
 }
 
 #[tauri::command]
@@ -124,23 +131,4 @@ pub async fn paste_sticky_content(app: AppHandle, id: i64) -> Result<(), String>
     }
 
     Ok(())
-}
-
-#[tauri::command]
-pub fn clear_all_stickies(app: AppHandle, state: State<'_, DbState>) -> Result<i32, String> {
-    let entries = state.sticky_repo.get_all()?;
-    let count = entries.len() as i32;
-
-    for entry in &entries {
-        let label = format!("sticky-{}", entry.id);
-        if let Some(win) = app.get_webview_window(&label) {
-            let _ = win.close();
-        }
-    }
-    // Delete all after closing windows
-    for entry in &entries {
-        let _ = state.sticky_repo.delete(entry.id);
-    }
-
-    Ok(count)
 }

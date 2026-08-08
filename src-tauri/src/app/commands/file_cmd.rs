@@ -1,5 +1,4 @@
 use crate::error::{AppResult, AppError};
-use std::path::Path;
 use serde::Serialize;
 use image::ImageFormat;
 
@@ -23,24 +22,6 @@ pub async fn save_file_copy(source_path: String, target_path: String) -> AppResu
     Ok(())
 }
 
-fn normalize_image_ext(ext: &str) -> Option<&'static str> {
-    match ext.to_lowercase().as_str() {
-        "png" => Some("png"),
-        "jpg" | "jpeg" => Some("jpg"),
-        "webp" => Some("webp"),
-        "gif" => Some("gif"),
-        _ => None,
-    }
-}
-
-pub(crate) fn image_ext_from_filename(name: &str) -> Option<&'static str> {
-    let ext = Path::new(name)
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
-    normalize_image_ext(ext)
-}
-
 pub(crate) fn image_ext_from_bytes(bytes: &[u8]) -> Option<&'static str> {
     let format = image::guess_format(bytes).ok()?;
     match format {
@@ -52,30 +33,3 @@ pub(crate) fn image_ext_from_bytes(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn image_ext_from_mime(mime: &str) -> Option<&'static str> {
-    match mime {
-        "image/gif" => Some("gif"),
-        "image/webp" => Some("webp"),
-        "image/jpeg" => Some("jpg"),
-        "image/png" => Some("png"),
-        _ => None,
-    }
-}
-
-fn image_ext_from_url(url: &reqwest::Url) -> Option<&'static str> {
-    let path = url.path();
-    let ext = Path::new(path)
-        .extension()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
-    normalize_image_ext(ext)
-}
-
-pub(crate) fn read_file_as_base64(path: &Path) -> AppResult<String> {
-    use std::io::Read;
-    let mut file = std::fs::File::open(path).map_err(AppError::from)?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).map_err(AppError::from)?;
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
-    Ok(STANDARD.encode(&buffer))
-}

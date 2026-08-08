@@ -660,7 +660,50 @@ pub fn truncate_html_for_preview(html: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_entry_preview, derive_rich_text_content, parse_cf_html, truncate_html_for_preview};
+    use super::{build_entry_preview, contains_sensitive_info, derive_rich_text_content, parse_cf_html, truncate_html_for_preview};
+
+    #[test]
+    fn sensitive_detection_matches_ai_tokens_with_sk_prefix() {
+        let kinds = vec!["secret".to_string()];
+        let rules: Vec<String> = vec![];
+        for token in [
+            "sk-1234567890abcdef1234567890abcdef", // DeepSeek 风格
+            "sk-proj-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", // OpenAI project key
+            "sk-ant-api03-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // Anthropic
+            "sk-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ABCD", // OpenAI legacy
+        ] {
+            assert!(contains_sensitive_info(token, &kinds, &rules), "应识别 sk- 前缀 token: {token}");
+        }
+    }
+
+    #[test]
+    fn sensitive_detection_does_not_match_plain_text_with_sk_substring() {
+        let kinds = vec!["secret".to_string()];
+        let rules: Vec<String> = vec![];
+        for text in [
+            "ask-me-anything-about-coding",
+            "Task-1234567890 (normal text)",
+            "The sky is blue today",
+            "编号 sk-2024080812345678 已生成", // short sk- prefix: not a key
+            "https://example.com/sk-abcdefghijklm", // URL path segment
+        ] {
+            assert!(!contains_sensitive_info(text, &kinds, &rules), "不应误报: {text}");
+        }
+    }
+
+    #[test]
+    fn sensitive_detection_still_matches_other_secret_patterns() {
+        let kinds = vec!["secret".to_string()];
+        let rules: Vec<String> = vec![];
+        for text in [
+            "password: hunter2hunter2hunter2",
+            "api_key=abcdefghijklmnopqrstuvwxyz1234",
+            "token = 1234567890abcdefghijklmnopqrstuv",
+            "ghp_abcdefghijklmnopqrstuvwxyz123456",
+        ] {
+            assert!(contains_sensitive_info(text, &kinds, &rules), "应识别其他密钥模式: {text}");
+        }
+    }
 
     #[test]
     fn rich_text_preview_prefers_readable_html_text() {
@@ -791,7 +834,12 @@ pub fn contains_sensitive_info(text: &str, kinds: &[String], custom_rules: &[Str
         if re.is_match(text) { return true; }
     }
     if has_kind("secret") {
-        let re = SECRET_RE.get_or_init(|| Regex::new(r"(?ix)((?:sk|pk|ghp|gho|github_pat|AIza|AKIA|ya29)[-_][\w\-]{20,}|(?:password|secret|api[_-]?key|access[_-]?key|token|bearer)[\s:=]+[\w\-]{16,})").unwrap());
+        // sk- keys: require 20+ chars AFTER the prefix (real keys are ~48),
+        // and the "sk-" must not be glued to a preceding word character —
+        // otherwise "ask-me-anything-about-coding" (sk- inside "ask-") or a
+        // short "sk-2024080812345678" id would be locked as sensitive.
+        // (regex crate has no lookbehind, hence the explicit negated class.)
+        let re = SECRET_RE.get_or_init(|| Regex::new(r"(?ix)((?:pk|ghp|gho|github_pat|AIza|AKIA|ya29)[-_][\w\-]{20,}|(?:^|[^A-Za-z0-9_])sk-[\w\-]{20,}|(?:password|secret|api[_-]?key|access[_-]?key|token|bearer)[\s:=]+[\w\-]{16,})").unwrap());
         if re.is_match(text) { return true; }
     }
     if has_kind("password") {

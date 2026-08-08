@@ -402,6 +402,13 @@ const ClipboardItem = ({
     const [sourceAppIcon, setSourceAppIcon] = useState<string | null>(() => peekSourceAppIcon(item.source_app_path) ?? null);
     
     const filePaths = useMemo(() => item.content_type === "file" ? item.content.split('\n').filter(path => path.trim()) : [], [item.content, item.content_type]);
+    // Image-file thumbnails for multi-file selections: when every selected
+    // file is an image we render a thumbnail strip instead of the plain
+    // "N items" card.
+    // Keep in sync with the Rust-side image extension list (clipboard/mod.rs
+    // and pipeline.rs): both now treat .svg as an image, .avif stays a plain file.
+    const fileImagePaths = useMemo(() => item.content_type === "file" ? filePaths.filter(p => /\.(png|jpe?g|jfif|gif|bmp|webp|svg)$/i.test(p)) : [], [item.content_type, filePaths]);
+    const allFilesAreImages = filePaths.length > 1 && fileImagePaths.length === filePaths.length;
     const singleFilePath = filePaths.length === 1 ? filePaths[0] : null;
     const [fileIcon, setFileIcon] = useState<string | null>(() => peekFileIcon(singleFilePath) ?? null);
     const isComposing = useRef(false);
@@ -475,6 +482,24 @@ const ClipboardItem = ({
 
     const renderFilePreview = () => {
         if (item.file_preview_exists === false) return <div className="file-thumbnail-card error-bg" title={t('file_deleted')}><div className="file-icon-wrapper error-icon"><FileQuestion size={24} /></div><div className="file-info-wrapper"><div className="file-name error-text">{t('file_deleted')}</div><div className="file-hint error-text">{filePaths.length > 1 ? item.content : filePaths[0].split(/[\\/]/).pop()}</div></div></div>;
+        if (filePaths.length > 1 && allFilesAreImages) {
+            const shown = fileImagePaths.slice(0, 5);
+            return (
+                <div className="file-thumbnail-card" title={item.content} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+                        {shown.map((p, i) => (
+                            <img key={i} src={toTauriLocalImageSrc(p) || convertFileSrc(p)} alt="" loading="lazy"
+                                style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--line-soft, rgba(128,128,128,0.25))', background: 'var(--bg-secondary, rgba(128,128,128,0.08))' }}
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                        ))}
+                    </div>
+                    <div className="file-info-wrapper" style={{ minWidth: 0 }}>
+                        <div className="file-name">{filePaths.length} {t('items')}</div>
+                        <div className="file-hint">{fileImagePaths[0].split(/[\\/]/).pop()}{fileImagePaths.length > shown.length ? ` +${fileImagePaths.length - shown.length}` : ''}</div>
+                    </div>
+                </div>
+            );
+        }
         if (filePaths.length > 1) return <div className="file-thumbnail-card" title={item.content}><div className="file-icon-wrapper"><Files size={24} /></div><div className="file-info-wrapper"><div className="file-name">{filePaths.length} {t('items')}</div><div className="file-hint">{filePaths[0].split(/[\\/]/).pop()} ...</div></div></div>;
         const filePath = filePaths[0];
         return <div className="file-thumbnail-card" title={item.content}><div className={`file-icon-wrapper ${fileIcon ? 'file-icon-wrapper-system' : ''}`}>{fileIcon ? <img src={fileIcon} alt="" className="file-icon-image" /> : getFallbackFileIcon(filePath)}</div><div className="file-info-wrapper"><div className="file-name">{filePath.split(/[\\/]/).pop()}</div><div className="file-hint">{filePath.split(/[\\/]/).slice(0, -1).join('\\')}</div></div></div>;

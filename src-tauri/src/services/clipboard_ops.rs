@@ -9,7 +9,7 @@ use base64::{engine::general_purpose, Engine as _};
 use regex::Regex;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 use tauri::{Emitter, Manager, State};
 use urlencoding::decode;
@@ -29,6 +29,45 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 const RICH_IMAGE_FALLBACK_PREFIX: &str = "<!--WINPASTE_RICH_IMAGE:";
 const RICH_IMAGE_FALLBACK_SUFFIX: &str = "-->";
+
+// SVG temp files use a counter suffix so two pastes within the same second
+// can never collide on one path (which would silently overwrite the first
+// SVG). Stale files are cleaned up at startup via cleanup_svg_temp_files().
+static SVG_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Remove leftover winpaste_SVG_* temp files from previous runs. Called at
+/// startup — by then nothing references the old clipboard payloads anymore.
+pub fn cleanup_svg_temp_files() {
+    if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with("winpaste_SVG_") {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
+/// Write file paths to the clipboard as CF_HDROP and record the hash the
+/// monitor will compute, so our own paste is skipped as an echo. The hash
+/// MUST match clipboard/mod.rs — it hashes the joined paths after
+/// `content.trim().replace("\r\n", "\n")`. All paste paths go through here
+/// so the protocol can't drift between branches.
+fn set_clipboard_files_with_self_skip_hash(win_paths: Vec<String>) -> AppResult<()> {
+    let mut hasher = DefaultHasher::new();
+    win_paths.join("\n").trim().hash(&mut hasher);
+    let hdrop_hash = hasher.finish();
+    crate::LAST_APP_SET_HASH.store(hdrop_hash, Ordering::SeqCst);
+    crate::info!("[DEBUG] copy_to_clipboard: SETTING LAST_APP_SET_HASH to {} for {} paths", hdrop_hash, win_paths.len());
+    unsafe {
+        crate::infrastructure::windows_api::win_clipboard::set_clipboard_files(win_paths)
+            .map_err(|e| {
+                crate::info!("[ERROR] set_clipboard_files failed: {}", e);
+                AppError::from(e)
+            })?;
+    }
+    Ok(())
+}
 
 fn split_rich_html_and_image_fallback(html: &str) -> (String, Option<String>) {
     if let Some(start) = html.rfind(RICH_IMAGE_FALLBACK_PREFIX) {
@@ -357,40 +396,55 @@ async fn copy_content_to_system_clipboard(
                 }
                 
                 if fallback_to_file {
-                    let win_path = clean_path.replace("/", "\\");
-                    crate::info!("[DEBUG] copy_to_clipboard: fallback_to_file for >1MB image. win_path={}", win_path);
-                    
-                    // We must hash the EXACT string that the monitor will see!
-                    // The monitor will read the backslash path from CF_HDROP.
-                    let mut hasher = DefaultHasher::new();
-                    win_path.hash(&mut hasher);
-                    let hdrop_hash = hasher.finish();
-                    crate::LAST_APP_SET_HASH.store(hdrop_hash, Ordering::SeqCst);
-                    crate::info!("[DEBUG] copy_to_clipboard: SETTING LAST_APP_SET_HASH to {} for path {}", hdrop_hash, win_path);
-
-                    unsafe {
-                        crate::infrastructure::windows_api::win_clipboard::set_clipboard_files(vec![win_path])
-                            .map_err(|e| {
-                                crate::info!("[ERROR] set_clipboard_files failed: {}", e);
-                                AppError::from(e)
-                            })?;
-                    }
+                    // Multi-file selections must be written to CF_HDROP as a
+                    // whole — pasting only the first path would drop the rest.
+                    let win_paths: Vec<String> = content
+                        .lines()
+                        .map(|line| {
+                            let clean = if line.starts_with("file://") {
+                                line.strip_prefix("file://").unwrap_or(line)
+                            } else {
+                                line
+                            };
+                            clean.replace("/", "\\")
+                        })
+                        .collect();
+                    crate::info!("[DEBUG] copy_to_clipboard: fallback_to_file for paths={}", win_paths.len());
+                    set_clipboard_files_with_self_skip_hash(win_paths)?;
                 }
             } else if content_type == "image" {
-                let b64_data = if content.starts_with("data:image") {
-                    content.split(',').nth(1).unwrap_or(content)
+                // SVG is a vector text format that the rasterizer can't
+                // convert to PNG — paste it back as a .svg file instead.
+                if content.starts_with("data:image/svg") {
+                    let b64_data = content.split(',').nth(1).unwrap_or(content);
+                    let bytes = general_purpose::STANDARD
+                        .decode(b64_data)
+                        .map_err(|e| AppError::Internal(format!("Base64 解码失败: {}", e)))?;
+                    let temp_path = std::env::temp_dir().join(format!(
+                        "winpaste_SVG_{}_{}.svg",
+                        current_time,
+                        SVG_TEMP_COUNTER.fetch_add(1, Ordering::SeqCst)
+                    ));
+                    std::fs::write(&temp_path, &bytes)
+                        .map_err(|e| AppError::IO(format!("写入临时 SVG 失败: {}", e)))?;
+                    let win_path = temp_path.to_string_lossy().replace("/", "\\");
+                    set_clipboard_files_with_self_skip_hash(vec![win_path])?;
                 } else {
-                    content
-                };
+                    let b64_data = if content.starts_with("data:image") {
+                        content.split(',').nth(1).unwrap_or(content)
+                    } else {
+                        content
+                    };
 
-                let bytes = general_purpose::STANDARD
-                    .decode(b64_data)
-                    .map_err(|e| AppError::Internal(format!("Base64 解码失败: {}", e)))?;
-                
-                let (primary_hash, _secondary_hash) = copy_image_bytes_to_clipboard(bytes, current_time)?;
-                // Keep LAST_APP_SET_HASH as content_hash (dataurl hash)
-                // Store pixel/byte hash in HASH_ALT
-                crate::LAST_APP_SET_HASH_ALT.store(primary_hash, Ordering::SeqCst);
+                    let bytes = general_purpose::STANDARD
+                        .decode(b64_data)
+                        .map_err(|e| AppError::Internal(format!("Base64 解码失败: {}", e)))?;
+
+                    let (primary_hash, _secondary_hash) = copy_image_bytes_to_clipboard(bytes, current_time)?;
+                    // Keep LAST_APP_SET_HASH as content_hash (dataurl hash)
+                    // Store pixel/byte hash in HASH_ALT
+                    crate::LAST_APP_SET_HASH_ALT.store(primary_hash, Ordering::SeqCst);
+                }
             } else {
                 let mut clipboard = arboard::Clipboard::new().map_err(AppError::from)?;
                 clipboard.set_text(content.to_string()).map_err(AppError::from)?;
@@ -521,12 +575,33 @@ fn copy_image_bytes_to_clipboard(
     // Check if it's a GIF by magic number
     let is_gif = bytes.len() > 3 && &bytes[0..3] == b"GIF";
 
+    // Decode ONCE — the same decoded image feeds both the PNG payload and the
+    // pixel hash. Previously the bytes were decoded twice, which made large
+    // images slow to paste.
+    let img = image::load_from_memory(&bytes)
+        .map_err(|e| AppError::Internal(format!("加载图像失败: {}", e)))?;
+
+    // Prepare PNG data for better compatibility. Encoded first so the output
+    // keeps the source color mode — byte-for-byte identical to before.
+    // Fast PNG encoding — default compression made large screenshots delay
+    // capture (same fix as clipboard/mod.rs).
+    let mut png_buf: Vec<u8> = Vec::new();
+    {
+        use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+        let mut cursor = std::io::Cursor::new(&mut png_buf);
+        let encoder = PngEncoder::new_with_quality(
+            &mut cursor,
+            CompressionType::Fast,
+            FilterType::NoFilter,
+        );
+        img.write_with_encoder(encoder)
+            .map_err(|e| AppError::Internal(format!("编码 PNG 失败: {}", e)))?;
+    }
+
     let (width, height, raw_bytes) = {
-        let img = image::load_from_memory(&bytes)
-            .map_err(|e| AppError::Internal(format!("加载图像失败: {}", e)))?
-            .to_rgba8();
-        let (w, h) = img.dimensions();
-        (w, h, img.into_raw())
+        let rgba = img.to_rgba8();
+        let (w, h) = rgba.dimensions();
+        (w, h, rgba.into_raw())
     };
 
     crate::LAST_APP_SET_TIMESTAMP.store(current_time, Ordering::SeqCst);
@@ -552,13 +627,6 @@ fn copy_image_bytes_to_clipboard(
         let byte_hash = hasher.finish();
         (byte_hash, 0)
     };
-
-    // Prepare PNG data for better compatibility
-    let mut png_buf: Vec<u8> = Vec::new();
-    let img = image::load_from_memory(&bytes)
-        .map_err(|e| AppError::Internal(format!("加载图像失败: {}", e)))?;
-    img.write_to(&mut std::io::Cursor::new(&mut png_buf), image::ImageFormat::Png)
-        .map_err(|e| AppError::Internal(format!("编码 PNG 失败: {}", e)))?;
 
     let gif_temp_path = unsafe {
         crate::infrastructure::windows_api::win_clipboard::set_clipboard_image_with_formats(
@@ -711,7 +779,13 @@ pub fn send_paste_keystroke(method: &str, content: Option<&str>, content_type: O
 
         let can_type =
             matches!(content_type, Some("text" | "code" | "url" | "rich_text"));
-        let effective_method = if method == "game_mode" && !can_type {
+        // Images/videos are always pasted with Ctrl+V: Shift+Insert is
+        // unreliable in chat/graphics apps for bitmap clipboard content.
+        // Files keep the user's setting (Shift+Insert is often the only way
+        // to paste file paths into old terminals like CMD).
+        let effective_method = if matches!(content_type, Some("image" | "video")) {
+            "ctrl_v"
+        } else if method == "game_mode" && !can_type {
             "ctrl_v"
         } else {
             method

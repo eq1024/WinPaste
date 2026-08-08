@@ -57,23 +57,5 @@ export const useAppActions = ({
     });
   };
 
-  const clearStickies = () => {
-    openConfirm({
-      title: t("clear_stickies_title") || "Clear All Stickies",
-      message: t("clear_stickies_confirm") || "This will close all sticky windows. Continue?",
-      onConfirm: async () => {
-        try {
-          const count: number = await invoke("clear_all_stickies");
-          pushToast(t("stickies_cleared").replace("{count}", String(count)));
-        } catch (err) {
-          console.error(err);
-          pushToast(t("clear_failed"));
-        } finally {
-          closeConfirm();
-        }
-      },
-    });
-  };
-
-  return { clearHistory, clearStickies, handleResetSettings };
+  return { clearHistory, handleResetSettings };
 };
