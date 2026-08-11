@@ -5,8 +5,7 @@
 <h1 align="center">WinPaste</h1>
 
 <p align="center">
-  一款快速、轻量的 Windows 剪贴板增强工具，完美替代 <kbd>Win+V</kbd>。<br>
-  面板跟随光标弹出，绝不抢夺焦点，用完即走。
+  一款快速、轻量的 Windows 剪贴板增强工具，完美替代 <kbd>Win+V</kbd>。
 </p>
 
 <p align="center">
@@ -83,7 +82,7 @@ npm run test:e2e       # Playwright e2e 测试
 | 加密 | Windows DPAPI + AES |
 | 输入 | `WH_KEYBOARD_LL` / `WH_MOUSE_LL` 底层钩子 |
 | 光标定位 | UIAutomation 接口（兼容 Chrome、VSCode、Electron） |
-| 打包 | NSIS 安装包、便携版 zip |
+| 打包 | NSIS 安装包 |
 
 **关键架构决策：**
 - **`WS_EX_NOACTIVATE`** 窗口样式——面板弹出不抢焦点
