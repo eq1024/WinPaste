@@ -60,6 +60,7 @@ interface SettingsState {
   winClipboardDisabled: boolean;
   registryWinVEnabled: boolean;
   settingsLoaded: boolean;
+  settingsLoadError: string | null;
   sequentialMode: boolean;
 
   // Actions
@@ -108,6 +109,7 @@ interface SettingsState {
   setWinClipboardDisabled: (disabled: boolean) => void;
   setRegistryWinVEnabled: (enabled: boolean) => void;
   setSettingsLoaded: (loaded: boolean) => void;
+  setSettingsLoadError: (error: string | null) => void;
   setSequentialModeState: (enabled: boolean) => void;
 }
 
@@ -158,6 +160,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   winClipboardDisabled: false,
   registryWinVEnabled: false,
   settingsLoaded: false,
+  settingsLoadError: null,
   sequentialMode: false,
 
   setLanguage: (language) => set({ language }),
@@ -207,5 +210,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setWinClipboardDisabled: (winClipboardDisabled) => set({ winClipboardDisabled }),
   setRegistryWinVEnabled: (registryWinVEnabled) => set({ registryWinVEnabled }),
   setSettingsLoaded: (settingsLoaded) => set({ settingsLoaded }),
+  setSettingsLoadError: (settingsLoadError) => set({ settingsLoadError }),
   setSequentialModeState: (sequentialMode) => set({ sequentialMode }),
 }));

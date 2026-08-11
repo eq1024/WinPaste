@@ -43,6 +43,8 @@ const COMPACT_PREVIEW_LABEL = "compact-preview";
 const RICH_IMAGE_FALLBACK_PREFIX = "<!--WINPASTE_RICH_IMAGE:";
 const RICH_IMAGE_FALLBACK_SUFFIX = "-->";
 const COMPACT_PREVIEW_DEBUG = false;
+const EXTERNAL_CHECK_TTL_MS = 10_000;
+const externalCheckCache = new Map<number, number>();
 const compactPreviewLog = (...args: unknown[]) => {
     if (!COMPACT_PREVIEW_DEBUG) return;
     const ts = new Date().toISOString();
@@ -385,7 +387,8 @@ const ClipboardItem = ({
     dragControls,
     id,
     disableLayout,
-    t
+    t,
+    onExternalMissing
 }: ClipboardItemProps & { t: (key: string) => string }) => {
     const { language, richTextSnapshotPreview, showSourceAppIcon, compactMode, privacyProtection, autoHideTags, colorMode } = useSettingsStore();
     const { tagInput, revealedIds, editingTagsId } = useHistoryStore();
@@ -400,6 +403,7 @@ const ClipboardItem = ({
     const [snapshotFailed, setSnapshotFailed] = useState(false);
     const [richImageFallbackFailed, setRichImageFallbackFailed] = useState(false);
     const [sourceAppIcon, setSourceAppIcon] = useState<string | null>(() => peekSourceAppIcon(item.source_app_path) ?? null);
+    const itemRef = useRef<HTMLDivElement | null>(null);
     
     const filePaths = useMemo(() => item.content_type === "file" ? item.content.split('\n').filter(path => path.trim()) : [], [item.content, item.content_type]);
     // Image-file thumbnails for multi-file selections: when every selected
@@ -421,7 +425,9 @@ const ClipboardItem = ({
     const richTextCleanHtml = richTextFallback?.cleanHtml || item.html_content || "";
     const richTextSnapshotDisplayMaxHeight = compactMode ? 40 : 64;
     const richTextSnapshotRenderMaxHeight = compactMode ? 100 : 200;
-    const canShowCompactPreview = compactMode && item.content_type !== "file";
+    const canShowCompactPreview = compactMode
+        && item.content_type !== "file"
+        && !(item.is_external && item.file_preview_exists === false);
     
     const richTextSnapshotSrc = useMemo(() => {
         if (!richTextSnapshotPreview || item.content_type !== "rich_text" || !item.html_content || !richTextCleanHtml) return null;
@@ -456,6 +462,7 @@ const ClipboardItem = ({
     }, [item.content_type, item.file_preview_exists, singleFilePath]);
 
     const showCompactPreview = async (anchor: CompactPreviewAnchor) => {
+        if (item.is_external && item.file_preview_exists === false) return;
         let previewWindow = await ensureCompactPreviewWindow();
         if (!previewWindow) return;
         await ensureCompactPreviewLifecycleListeners(); await ensureCompactPreviewResizeListener(); await waitForCompactPreviewMounted();
@@ -479,6 +486,30 @@ const ClipboardItem = ({
     useEffect(() => { if (isEditingTags && tagInputRef.current) tagInputRef.current.focus(); }, [isEditingTags]);
     useEffect(() => { if (!canShowCompactPreview) void hideCompactPreviewGlobal(); }, [canShowCompactPreview]);
     useEffect(() => { return () => { if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current); hoverAnchorRef.current = null; void hideCompactPreviewGlobal(); }; }, []);
+
+    useEffect(() => {
+        if (!item.is_external || item.file_preview_exists === false || !onExternalMissing) return;
+        const el = itemRef.current;
+        if (!el || typeof IntersectionObserver === "undefined") return;
+
+        const observer = new IntersectionObserver((entries) => {
+            if (!entries.some(entry => entry.isIntersecting)) return;
+
+            const now = Date.now();
+            const lastCheck = externalCheckCache.get(item.id) || 0;
+            if (now - lastCheck < EXTERNAL_CHECK_TTL_MS) return;
+            externalCheckCache.set(item.id, now);
+
+            invoke<boolean>("check_external_file_exists", { content: item.content })
+                .then((exists) => {
+                    if (!exists) onExternalMissing(item.id);
+                })
+                .catch(() => {});
+        }, { rootMargin: "80px 0px" });
+
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [item.id, item.content, item.is_external, item.file_preview_exists, onExternalMissing]);
 
     const renderFilePreview = () => {
         if (item.file_preview_exists === false) return <div className="file-thumbnail-card error-bg" title={t('file_deleted')}><div className="file-icon-wrapper error-icon"><FileQuestion size={24} /></div><div className="file-info-wrapper"><div className="file-name error-text">{t('file_deleted')}</div><div className="file-hint error-text">{filePaths.length > 1 ? item.content : filePaths[0].split(/[\\/]/).pop()}</div></div></div>;
@@ -506,7 +537,7 @@ const ClipboardItem = ({
     };
 
     return (
-        <motion.div id={id} layout={!disableLayout} initial={false} animate={{ marginBottom: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.1 }}
+        <motion.div ref={itemRef} id={id} layout={!disableLayout} initial={false} animate={{ marginBottom: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.1 }}
             className={`history-item ${isSelected ? "selected" : ""} ${compactMode ? "compact" : ""} ${item.is_pinned ? "pinned" : ""} ${item.content_type === 'file' ? 'file-item' : ''}`}
             data-selected={isSelected}
             onMouseDown={(e) => {

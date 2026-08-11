@@ -17,6 +17,27 @@ pub fn get_file_size(path: String) -> AppResult<FileSize> {
 }
 
 #[tauri::command]
+pub fn check_external_file_exists(content: String) -> bool {
+    let first_file = content.lines().next().unwrap_or(&content).trim();
+    let raw_path = if first_file.starts_with("file://") {
+        first_file.strip_prefix("file://").unwrap_or(first_file)
+    } else {
+        first_file
+    };
+    let raw_path = if raw_path.starts_with('/') && raw_path.chars().nth(2) == Some(':') {
+        &raw_path[1..]
+    } else {
+        raw_path
+    };
+
+    let decoded = urlencoding::decode(raw_path).ok();
+    match decoded {
+        Some(path) => std::path::Path::new(path.as_ref()).exists(),
+        None => std::path::Path::new(raw_path).exists(),
+    }
+}
+
+#[tauri::command]
 pub async fn save_file_copy(source_path: String, target_path: String) -> AppResult<()> {
     std::fs::copy(source_path, target_path).map_err(AppError::from)?;
     Ok(())

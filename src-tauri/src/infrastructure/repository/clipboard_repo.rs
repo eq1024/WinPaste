@@ -7,7 +7,7 @@ use crate::domain::models::ClipboardEntry;
 use crate::infrastructure::encryption;
 use crate::database::{
     calc_text_hash, calc_image_hash, 
-    ENCRYPT_PREFIX, save_image_to_file,
+    ENCRYPT_PREFIX,
     is_text_type, has_sensitive_tag
 };
 use rusqlite::params;
@@ -288,22 +288,16 @@ impl SqliteClipboardRepository {
         paths.into_iter().collect()
     }
 
-    pub fn save_with_conn(&self, conn: &Connection, entry: &ClipboardEntry, data_dir: Option<&std::path::Path>) -> Result<i64, String> {
+    pub fn save_with_conn(&self, conn: &Connection, entry: &ClipboardEntry, _data_dir: Option<&std::path::Path>) -> Result<i64, String> {
         // Encrypt only when explicitly marked as sensitive
         let should_encrypt = has_sensitive_tag(&entry.tags);
 
-        let mut final_content = entry.content.clone();
-        let mut final_is_external = entry.is_external;
+        let final_content = entry.content.clone();
+        let final_is_external = entry.is_external;
 
-        // Externalize image if possible
-        if entry.content_type == "image" && entry.content.starts_with("data:image/") {
-            if let Some(dir) = data_dir {
-                if let Some(path) = save_image_to_file(&entry.content, dir) {
-                    final_content = path;
-                    final_is_external = true;
-                }
-            }
-        }
+        // Clipboard bitmap / embedded images (screenshots, GIFs, small local
+        // image files) are stored in the database as data URLs. Only images
+        // that already arrived as file paths keep their external-file mode.
 
         let calculated_hash = if entry.content_type == "image" {
             if entry.content.starts_with("data:") {

@@ -686,9 +686,24 @@ mod tests {
             "The sky is blue today",
             "编号 sk-2024080812345678 已生成", // short sk- prefix: not a key
             "https://example.com/sk-abcdefghijklm", // URL path segment
+            "prefix sk-abcdefghijklmnopqrstuvwxyz0123456789", // sk- in the middle
         ] {
             assert!(!contains_sensitive_info(text, &kinds, &rules), "不应误报: {text}");
         }
+    }
+
+    #[test]
+    fn sensitive_detection_sk_requires_exact_prefix_and_total_length() {
+        let kinds = vec!["secret".to_string()];
+        let rules: Vec<String> = vec![];
+
+        for text in ["sk-12345678901234567"] {
+            assert!(
+                !contains_sensitive_info(text, &kinds, &rules),
+                "总长度未超过 20 位不应识别: {text}"
+            );
+        }
+        assert!(contains_sensitive_info("sk-123456789012345678", &kinds, &rules));
     }
 
     #[test]
@@ -834,12 +849,14 @@ pub fn contains_sensitive_info(text: &str, kinds: &[String], custom_rules: &[Str
         if re.is_match(text) { return true; }
     }
     if has_kind("secret") {
-        // sk- keys: require 20+ chars AFTER the prefix (real keys are ~48),
-        // and the "sk-" must not be glued to a preceding word character —
-        // otherwise "ask-me-anything-about-coding" (sk- inside "ask-") or a
-        // short "sk-2024080812345678" id would be locked as sensitive.
-        // (regex crate has no lookbehind, hence the explicit negated class.)
-        let re = SECRET_RE.get_or_init(|| Regex::new(r"(?ix)((?:pk|ghp|gho|github_pat|AIza|AKIA|ya29)[-_][\w\-]{20,}|(?:^|[^A-Za-z0-9_])sk-[\w\-]{20,}|(?:password|secret|api[_-]?key|access[_-]?key|token|bearer)[\s:=]+[\w\-]{16,})").unwrap());
+        // sk- keys: only when the content itself starts with sk-, and the
+        // total length exceeds 20 characters. Mid-text sk- fragments (e.g.
+        // "ask-..." or "prefix sk-...") must not trigger encryption.
+        let candidate = text.trim_start();
+        if candidate.chars().count() > 20 && candidate.starts_with("sk-") {
+            return true;
+        }
+        let re = SECRET_RE.get_or_init(|| Regex::new(r"(?ix)((?:pk|ghp|gho|github_pat|AIza|AKIA|ya29)[-_][\w\-]{20,}|(?:password|secret|api[_-]?key|access[_-]?key|token|bearer)[\s:=]+[\w\-]{16,})").unwrap());
         if re.is_match(text) { return true; }
     }
     if has_kind("password") {

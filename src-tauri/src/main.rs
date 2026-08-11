@@ -122,6 +122,7 @@ fn main() {
 
             app::commands::get_file_size,
             app::commands::save_file_copy,
+            app::commands::check_external_file_exists,
             
             services::paste_queue::get_paste_queue,
             services::paste_queue::set_paste_queue,

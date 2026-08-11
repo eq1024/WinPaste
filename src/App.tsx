@@ -129,6 +129,7 @@ const App = () => {
     setDefaultApps,
     setWinClipboardDisabled,
     settingsLoaded,
+    settingsLoadError,
     sequentialMode,
     colorMode,
   } = settingsState;
@@ -310,6 +311,12 @@ const App = () => {
   useSoundEffects({ soundEnabled, soundVolume, pasteSoundEnabled });
 
   const settings = useSettingsInit();
+
+  useEffect(() => {
+    if (settingsLoadError) {
+      pushToast(t('settings_load_failed'), 5000);
+    }
+  }, [settingsLoadError, pushToast, t]);
 
   useSettingsPostInit({
     settings
@@ -527,6 +534,14 @@ const App = () => {
       onStickyCreated: fetchStickies
     });
 
+  const markExternalMissing = useCallback((id: number) => {
+    setHistory((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, file_preview_exists: false } : item
+      )
+    );
+  }, [setHistory]);
+
   const { clearHistory, handleResetSettings } = useAppActions({
     t,
     openConfirm,
@@ -603,6 +618,7 @@ const App = () => {
     tagInput: tagInput,
     setTagInput: setTagInput as any,
     handleUpdateTags,
+    markExternalMissing,
     t
   });
 

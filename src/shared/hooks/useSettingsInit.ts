@@ -10,7 +10,8 @@ export const useSettingsInit = () => {
     setCompactMode,
     setLanguage,
     setColorMode,
-    setStickyEnabled
+    setStickyEnabled,
+    setSettingsLoadError
   } = useSettingsStore();
 
   useEffect(() => {
@@ -26,6 +27,7 @@ export const useSettingsInit = () => {
     invoke<Record<string, string>>("get_settings")
       .then((res) => {
         if (disposed) return;
+        setSettingsLoadError(null);
         setSettings(res);
 
         if (res["app.hotkey"]) setHotkey(res["app.hotkey"]);
@@ -52,7 +54,12 @@ export const useSettingsInit = () => {
            }
         }
       })
-      .catch(console.error);
+      .catch((err) => {
+        console.error(err);
+        if (!disposed) {
+          setSettingsLoadError(err instanceof Error ? err.message : String(err));
+        }
+      });
 
     return () => {
       disposed = true;

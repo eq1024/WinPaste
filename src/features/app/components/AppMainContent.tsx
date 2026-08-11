@@ -104,6 +104,8 @@ const AppMainContent = ({
   const {
     compactMode,
     pinnedCollapsed,
+    settingsLoaded,
+    settingsLoadError,
   } = useSettingsStore();
 
   const {
@@ -214,7 +216,25 @@ const AppMainContent = ({
           className="settings-view"
           style={{ display: "flex", flexDirection: "column", gap: "12px" }}
         >
-          <SettingsPanel {...settingsPanelProps} />
+          {settingsLoaded ? (
+            <SettingsPanel {...settingsPanelProps} />
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                minHeight: 180,
+                color: "var(--text-secondary)",
+                fontSize: 12,
+                textAlign: "center",
+                padding: "0 16px",
+              }}
+            >
+              {settingsLoadError ? t("settings_load_failed") : t("settings_loading")}
+            </div>
+          )}
         </motion.div>
       ) : filteredHistory.length === 0 ? (
         <motion.div

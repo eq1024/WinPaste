@@ -441,6 +441,59 @@ mod tests {
     }
 
     #[test]
+    fn test_data_url_image_stays_in_database() {
+        let conn = setup_test_db();
+
+        let mut png_bytes = Vec::new();
+        {
+            let mut cursor = std::io::Cursor::new(&mut png_bytes);
+            image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 0, 0, 255]))
+                .write_to(&mut cursor, image::ImageFormat::Png)
+                .unwrap();
+        }
+        let data_url = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(&png_bytes)
+        );
+
+        let entry = ClipboardEntry {
+            id: 0,
+            content_type: "image".to_string(),
+            content: data_url.clone(),
+            html_content: None,
+            source_app: "TestApp".to_string(),
+            source_app_path: Some("C:\\TestApp.exe".to_string()),
+            timestamp: 123456789,
+            preview: "[Image Content]".to_string(),
+            is_pinned: false,
+            tags: vec![],
+            use_count: 0,
+            is_external: false,
+            pinned_order: 0,
+            file_preview_exists: true,
+        };
+
+        let conn_arc = Arc::new(Mutex::new(conn));
+        let repo = SqliteClipboardRepository::new(conn_arc);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let data_dir = std::env::temp_dir().join(format!("winpaste_db_test_{}_{}", std::process::id(), nanos));
+
+        let id = repo.save(&entry, Some(&data_dir)).expect("保存失败");
+        assert!(id > 0);
+
+        let history = repo.get_history(10, 0, None).expect("获取历史失败");
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].content, data_url);
+        assert!(!history[0].is_external);
+        assert!(!data_dir.join("attachments").exists());
+
+        let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
     fn test_settings_persistence() {
         let conn = setup_test_db();
         let conn_arc = Arc::new(Mutex::new(conn));

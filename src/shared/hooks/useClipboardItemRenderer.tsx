@@ -23,6 +23,7 @@ interface UseClipboardItemRendererOptions {
   tagInput: string;
   setTagInput: Dispatch<SetStateAction<string>>;
   handleUpdateTags: (id: number, tags: string[]) => void;
+  markExternalMissing: (id: number) => void;
   t: (key: string) => string;
 }
 
@@ -45,6 +46,7 @@ export const useClipboardItemRenderer = ({
   tagInput,
   setTagInput,
   handleUpdateTags,
+  markExternalMissing,
   t
 }: UseClipboardItemRendererOptions): { renderItemContent: RenderItemContent } => {
   // Use a ref to keep track of the latest tagInput value without triggering re-renders of the renderer itself
@@ -81,6 +83,7 @@ export const useClipboardItemRenderer = ({
           onTogglePin={(e) => togglePin(e, item.id, item.is_pinned)}
           onDelete={(e) => deleteEntry(e, item.id)}
           onStickyCreate={createSticky ? (e: MouseEvent) => { e.stopPropagation(); createSticky(item); } : undefined}
+          onExternalMissing={markExternalMissing}
           onToggleTagEditor={(e) => {
             e.stopPropagation();
             console.log('Toggling tag editor for item:', item.id);
@@ -122,6 +125,7 @@ export const useClipboardItemRenderer = ({
       setEditingTagsId,
       setTagInput,
       handleUpdateTags,
+      markExternalMissing,
       t
     ]
   );

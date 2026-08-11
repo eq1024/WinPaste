@@ -68,6 +68,34 @@
     object-fit: contain !important;
 }
 
+/* Deleted/moved image placeholder stays inside the compact row height */
+.history-item.compact .image-preview.error-placeholder {
+    height: 34px !important;
+    max-height: 34px !important;
+    min-width: 0;
+    flex-direction: row !important;
+    gap: 6px !important;
+    padding: 0 6px !important;
+    font-size: 11px !important;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.history-item.compact .image-preview.error-placeholder svg {
+    width: 14px;
+    height: 14px;
+    margin-bottom: 0 !important;
+    flex-shrink: 0;
+}
+
+.history-item.compact .image-preview.error-placeholder > span {
+    margin-bottom: 0 !important;
+}
+
+.history-item.compact .image-preview.error-placeholder > span:last-child {
+    display: none !important;
+}
+
 /* Hover Detail Popover */
 /* Original class kept for reference or non-portal usage if any */
 .compact-popover {
@@ -389,6 +417,7 @@ body.theme-retro .history-item.compact .ai-options-dropdown button {
     display: flex;
     align-items: center;
     overflow: hidden !important;
+    max-height: none !important;
 }
 
 /* Reduced padding for sensitive blur in compact mode to save height */
