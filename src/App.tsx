@@ -40,6 +40,7 @@ import { useSearchFetchTrigger } from "./shared/hooks/useSearchFetchTrigger";
 import { useScrollToSelection } from "./shared/hooks/useScrollToSelection";
 import { useClipboardItemRenderer } from "./shared/hooks/useClipboardItemRenderer";
 import { useOverlays } from "./shared/hooks/useOverlays";
+import { compactPreviewController } from "./features/clipboard/lib/compactPreviewController";
 import type { ClipboardEntry } from "./shared/types";
 import type { VirtualClipboardListHandle } from "./features/clipboard/types";
 
@@ -213,6 +214,7 @@ const App = () => {
   const handleListScroll = useCallback((offset: number) => {
     handleSearchScroll(offset);
     setShowScrollTop(offset > 200);
+    void compactPreviewController.hide();
   }, [handleSearchScroll]);
 
   const handleScrollTop = useCallback(() => {

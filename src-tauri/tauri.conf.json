@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "WinPaste",
-  "version": "1.6.7",
+  "version": "1.6.8",
   "identifier": "com.winpaste.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -53,6 +53,7 @@
             "core:window:allow-set-position",
             "core:window:allow-set-always-on-top",
             "core:window:allow-current-monitor",
+            "core:window:allow-outer-size",
             "core:window:allow-cursor-position",
             "core:window:allow-create",
             "core:window:allow-get-all-windows",
@@ -65,6 +66,7 @@
             "core:event:allow-listen",
             "core:event:allow-unlisten",
             "core:event:allow-emit",
+            "core:event:allow-emit-to",
             "core:app:allow-version",
             "core:app:default",
             "dialog:allow-open",

@@ -114,8 +114,14 @@ export const useKeyboardNavigation = ({
       }
 
       if (action === "enter") {
-        // 防御：搜索框聚焦时不粘贴（Enter 应交给 IME/前端 keydown 处理）
-        if (document.activeElement === searchInputRef.current) return;
+        // 搜索框聚焦时，只有输入法组合期间的 Enter 才放行给 IME；
+        // 非组合状态（例如搜索完选好条目后）按 Enter 应该正常粘贴。
+        if (
+          document.activeElement === searchInputRef.current &&
+          useHistoryStore.getState().isComposing
+        ) {
+          return;
+        }
         const item = historyRef.current[selectedIndexRef.current];
         if (item) {
           copyToClipboard(item.id, item.content, item.content_type, false, item.is_external, item.file_preview_exists);
@@ -305,8 +311,10 @@ export const useKeyboardNavigation = ({
       if (isEnter) {
         if (e.isComposing || e.keyCode === 229) return;
         
-        // 任何输入框聚焦（含搜索框）都不粘贴，避免与输入法冲突
-        if (isInputFocused) return;
+        // 搜索框聚焦时，非输入法组合状态的 Enter 仍可粘贴；
+        // 其他输入框聚焦仍不粘贴，避免误触发。
+        if (isInputFocused && !isSearchInputFocused) return;
+        if (isSearchInputFocused) e.preventDefault();
         
         const item = historyRef.current[selectedIndexRef.current];
         if (item) {

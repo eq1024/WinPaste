@@ -1,36 +1,21 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";
-import { getCurrentWindow, LogicalSize, currentMonitor } from "@tauri-apps/api/window";
+import { currentMonitor, getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import {
+    AppWindow,
+    Clock,
+    Code,
+    File,
     FileText,
     Image as ImageIcon,
     Link as LinkIcon,
-    Code,
-    File,
-    Video,
-    AppWindow,
-    Clock
+    Video
 } from "lucide-react";
 import HtmlContent from "../../../shared/components/HtmlContent";
 import { getConciseTime } from "../../../shared/lib/utils";
-import type { Locale } from "../../../shared/types";
+import type { CompactPreviewPayload, CompactPreviewReadyPayload } from "../lib/compactPreviewController";
 import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
 import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot";
-
-type PreviewPayload = {
-    contentType: string;
-    content: string;
-    preview?: string;
-    htmlContent?: string;
-    sourceApp?: string;
-    timestamp?: number;
-    language?: Locale;
-    theme?: string;
-    colorMode?: "light" | "dark";
-    richTextSnapshotPreview?: boolean;
-    clipboardItemFontSize?: number;
-    clipboardTagFontSize?: number;
-};
 
 const RICH_IMAGE_FALLBACK_PREFIX = "<!--WINPASTE_RICH_IMAGE:";
 const RICH_IMAGE_FALLBACK_SUFFIX = "-->";
@@ -61,12 +46,6 @@ const resolveRichImageSrc = (payload: string): string | null => {
     return toTauriLocalImageSrc(value);
 };
 
-const RICH_PREVIEW_DEBUG = import.meta.env.DEV;
-const richPreviewFailureLog = (stage: string, detail?: Record<string, unknown>) => {
-    if (!RICH_PREVIEW_DEBUG) return;
-    console.warn("[RichTextPreview][CompactWindow]", stage, detail || {});
-};
-
 const getIcon = (type: string) => {
     switch (type) {
         case "text": return <FileText size={14} />;
@@ -91,11 +70,11 @@ const seekVideoPreviewFrame = (video: HTMLVideoElement | null) => {
     try {
         video.currentTime = target;
     } catch {
-        // Ignore seek errors; fallback will just show the first frame.
+        // Ignore seek errors; the first frame remains a valid fallback.
     }
 };
 
-const applyTheme = (payload: PreviewPayload) => {
+const applyTheme = (payload: CompactPreviewPayload) => {
     const root = document.documentElement;
     const body = document.body;
 
@@ -124,60 +103,67 @@ const applyTheme = (payload: PreviewPayload) => {
     }
 };
 
+const readCssPx = (name: string, fallback: number): number => {
+    const raw = document.documentElement.style.getPropertyValue(name).trim();
+    const value = raw ? Number.parseFloat(raw) : Number.NaN;
+    return Number.isFinite(value) ? value : fallback;
+};
+
+const nextFrame = () => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
+
 const CompactPreviewWindow = () => {
-    const [payload, setPayload] = useState<PreviewPayload | null>(null);
+    const [payload, setPayload] = useState<CompactPreviewPayload | null>(null);
     const [snapshotFailed, setSnapshotFailed] = useState(false);
     const [richImageFallbackFailed, setRichImageFallbackFailed] = useState(false);
-    const richSnapshotImgRef = useRef<HTMLImageElement | null>(null);
-    const richSnapshotFallbackTimerRef = useRef<number | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
     const metaRef = useRef<HTMLDivElement | null>(null);
     const contentRef = useRef<HTMLDivElement | null>(null);
     const dividerRef = useRef<HTMLDivElement | null>(null);
-    const requestResizeRef = useRef<() => void>(() => {});
-    const previewBoundsRef = useRef({ width: 560, height: 560, mediaWidth: 520, mediaHeight: 360 });
-    const lastSentSizeRef = useRef<{ width: number; height: number } | null>(null);
+    const richSnapshotImgRef = useRef<HTMLImageElement | null>(null);
+    const richSnapshotFallbackTimerRef = useRef<number | null>(null);
+    const requestIdRef = useRef(0);
+    const syncSeqRef = useRef(0);
+    const lastEmittedSizeRef = useRef<{ width: number; height: number } | null>(null);
+    const sizeSyncInFlightRef = useRef(false);
+
     const richImageFallbackSrc = useMemo(() => {
         if (!payload || payload.contentType !== "rich_text" || !payload.htmlContent) return null;
         const { imagePayload } = extractRichImageFallback(payload.htmlContent);
         if (!imagePayload) return null;
-        const src = resolveRichImageSrc(imagePayload);
-        if (!src) return null;
-        return src;
+        return resolveRichImageSrc(imagePayload);
     }, [payload]);
+
     const richTextSnapshotSrc = useMemo(() => {
         if (!payload || payload.contentType !== "rich_text" || !payload.htmlContent) return null;
         if (!payload.richTextSnapshotPreview) return null;
         const { cleanHtml } = extractRichImageFallback(payload.htmlContent);
-        const htmlForSnapshot = cleanHtml || payload.htmlContent;
-        return getRichTextSnapshotDataUrl(htmlForSnapshot, {
+        return getRichTextSnapshotDataUrl(cleanHtml || payload.htmlContent, {
             width: 560,
             maxHeight: 1200
         });
     }, [payload]);
+
     const effectiveRichTextSnapshotSrc = snapshotFailed ? null : richTextSnapshotSrc;
     const effectiveRichImageFallbackSrc = richImageFallbackFailed ? null : richImageFallbackSrc;
     const useSnapshotPreviewImage = !effectiveRichImageFallbackSrc && !!effectiveRichTextSnapshotSrc;
 
     useEffect(() => {
-        getCurrentWindow().setAlwaysOnTop(true).catch(console.error);
-        (async () => {
+        const appWindow = getCurrentWindow();
+        appWindow.setAlwaysOnTop(true).catch(console.error);
+        let cancelled = false;
+
+        const initBounds = async () => {
             try {
                 const monitor = await currentMonitor();
                 const monitorWidth = monitor?.size.width ?? 1280;
                 const monitorHeight = monitor?.size.height ?? 720;
-                const maxWidth = Math.max(320, Math.min(560, Math.floor(monitorWidth * 0.6)));
-                const maxHeight = Math.max(240, Math.min(560, Math.floor(monitorHeight * 0.6)));
+                const scale = monitor?.scaleFactor ?? 1;
+                const maxWidth = Math.max(320, Math.min(560, Math.floor((monitorWidth / scale) * 0.6)));
+                const maxHeight = Math.max(240, Math.min(560, Math.floor((monitorHeight / scale) * 0.6)));
                 const mediaMaxWidth = Math.max(260, Math.min(520, maxWidth));
                 const mediaMaxHeight = Math.max(200, Math.min(360, maxHeight - 120));
-                const minWidth = Math.max(300, Math.min(380, Math.floor(maxWidth * 0.62)));
-
-                previewBoundsRef.current = {
-                    width: maxWidth,
-                    height: maxHeight,
-                    mediaWidth: mediaMaxWidth,
-                    mediaHeight: mediaMaxHeight
-                };
+                const minWidth = Math.max(280, Math.min(360, Math.floor(maxWidth * 0.7)));
+                if (cancelled) return;
 
                 const root = document.documentElement;
                 root.style.setProperty("--preview-max-width", `${maxWidth}px`);
@@ -185,78 +171,141 @@ const CompactPreviewWindow = () => {
                 root.style.setProperty("--preview-media-max-width", `${mediaMaxWidth}px`);
                 root.style.setProperty("--preview-media-max-height", `${mediaMaxHeight}px`);
                 root.style.setProperty("--preview-min-width", `${minWidth}px`);
-
-                await getCurrentWindow().setSize(new LogicalSize(maxWidth, maxHeight));
             } catch (err) {
                 console.error("Failed to initialize preview bounds:", err);
-            } finally {
-                requestResizeRef.current?.();
+            }
+        };
+        void initBounds();
+
+        const setupPromise = (async () => {
+            try {
+                const off = await listen<CompactPreviewPayload>("compact-preview-update", (event) => {
+                    setPayload(event.payload);
+                    if (event.payload.requestId) {
+                        requestIdRef.current = event.payload.requestId;
+                    }
+                    const root = document.documentElement;
+                    if (event.payload.maxWidth) {
+                        root.style.setProperty("--preview-max-width", `${event.payload.maxWidth}px`);
+                    }
+                    if (event.payload.maxHeight) {
+                        root.style.setProperty("--preview-max-height", `${event.payload.maxHeight}px`);
+                    }
+                    if (event.payload.mediaMaxWidth) {
+                        root.style.setProperty("--preview-media-max-width", `${event.payload.mediaMaxWidth}px`);
+                    }
+                    if (event.payload.mediaMaxHeight) {
+                        root.style.setProperty("--preview-media-max-height", `${event.payload.mediaMaxHeight}px`);
+                    }
+                    if (event.payload.minWidth) {
+                        root.style.setProperty("--preview-min-width", `${event.payload.minWidth}px`);
+                    }
+                    applyTheme(event.payload);
+                });
+                if (cancelled) {
+                    off();
+                    return () => {};
+                }
+                emitTo("main", "compact-preview-mounted", true).catch(() => {});
+                return off;
+            } catch {
+                return () => {};
             }
         })();
-        const unlisten = listen<PreviewPayload>("compact-preview-update", (event) => {
-            setPayload(event.payload);
-            applyTheme(event.payload);
-        });
-        emitTo("main", "compact-preview-mounted", true).catch(console.error);
+
         return () => {
-            unlisten.then((f) => f());
+            cancelled = true;
+            setupPromise.then((off) => off());
         };
     }, []);
 
+    const syncWindowSize = useCallback(async (seq: number) => {
+        if (syncSeqRef.current !== seq) return;
+        if (sizeSyncInFlightRef.current) return;
+        const container = containerRef.current;
+        if (!container) return;
+
+        const rect = container.getBoundingClientRect();
+        const logicalWidth = Math.ceil(rect.width);
+        const logicalHeight = Math.ceil(rect.height);
+        if (logicalWidth < 40 || logicalHeight < 40) return;
+
+        const maxWidth = readCssPx("--preview-max-width", 560);
+        const maxHeight = readCssPx("--preview-max-height", 560);
+        const minWidth = readCssPx("--preview-min-width", 320);
+        const width = Math.min(Math.max(logicalWidth, minWidth), maxWidth);
+        const height = Math.min(Math.max(logicalHeight, 80), maxHeight);
+
+        const last = lastEmittedSizeRef.current;
+        if (last && Math.abs(last.width - width) <= 1 && Math.abs(last.height - height) <= 1) return;
+        lastEmittedSizeRef.current = { width, height };
+
+        sizeSyncInFlightRef.current = true;
+        try {
+            const appWindow = getCurrentWindow();
+            await appWindow.setSize(new LogicalSize(width, height));
+            await nextFrame();
+            let physical = await appWindow.outerSize();
+            if ((physical.width <= 2 || physical.height <= 2) && syncSeqRef.current === seq) {
+                await new Promise<void>((resolve) => setTimeout(resolve, 40));
+                physical = await appWindow.outerSize();
+            }
+            if (syncSeqRef.current !== seq) return;
+            const scale = await appWindow.scaleFactor();
+            const widthPx = physical.width > 2 ? physical.width : Math.max(1, Math.round(width * scale));
+            const heightPx = physical.height > 2 ? physical.height : Math.max(1, Math.round(height * scale));
+            const ready: CompactPreviewReadyPayload = {
+                requestId: requestIdRef.current,
+                width: widthPx,
+                height: heightPx
+            };
+            emitTo("main", "compact-preview-ready", ready).catch(() => {});
+        } catch {
+            // The window may have been closed; the controller will recreate it.
+        } finally {
+            sizeSyncInFlightRef.current = false;
+        }
+    }, []);
+
+    const requestResize = useCallback(() => {
+        lastEmittedSizeRef.current = null;
+        const seq = syncSeqRef.current;
+        window.requestAnimationFrame(() => {
+            if (syncSeqRef.current === seq) void syncWindowSize(seq);
+        });
+    }, [syncWindowSize]);
+
     useEffect(() => {
         if (!payload) return;
-        let raf = 0;
-        let timerA: number | null = null;
-        let timerB: number | null = null;
-        let timerC: number | null = null;
-        const updateSize = () => {
-            raf = window.requestAnimationFrame(() => {
-                const container = containerRef.current;
-                if (!container) return;
+        const seq = ++syncSeqRef.current;
+        lastEmittedSizeRef.current = null;
 
-                const bounds = previewBoundsRef.current;
-                const maxWidth = bounds.width;
-                const maxHeight = bounds.height;
-                const minWidth =
-                    payload.contentType === "image" || payload.contentType === "video"
-                        ? 260
-                        : Math.min(bounds.width, 320);
-
-                const measuredWidth = Math.max(container.offsetWidth, container.scrollWidth);
-                const measuredHeight = Math.max(container.offsetHeight, container.scrollHeight);
-                const width = Math.min(Math.max(Math.ceil(measuredWidth), minWidth), maxWidth);
-                const height = Math.min(Math.max(Math.ceil(measuredHeight), 80), maxHeight);
-                if (width < 40 || height < 40) return;
-
-                const last = lastSentSizeRef.current;
-                if (last && Math.abs(last.width - width) <= 1 && Math.abs(last.height - height) <= 1) return;
-                
-                lastSentSizeRef.current = { width, height };
-                emitTo("main", "compact-preview-resize", { width, height }).catch(console.error);
-                getCurrentWindow().setSize(new LogicalSize(width, height)).catch(console.error);
+        const syncNow = () => {
+            if (syncSeqRef.current !== seq) return;
+            window.requestAnimationFrame(() => {
+                if (syncSeqRef.current !== seq) return;
+                void syncWindowSize(seq);
             });
         };
 
-        requestResizeRef.current = updateSize;
-        updateSize();
-        const observer = new ResizeObserver(updateSize);
-        if (containerRef.current) observer.observe(containerRef.current);
-        if (contentRef.current) observer.observe(contentRef.current);
-        if (metaRef.current) observer.observe(metaRef.current);
-        if (dividerRef.current) observer.observe(dividerRef.current);
+        const observer = new ResizeObserver(syncNow);
+        const targets = [containerRef.current, metaRef.current, contentRef.current, dividerRef.current].filter(
+            (element): element is HTMLDivElement => !!element
+        );
+        targets.forEach((element) => observer.observe(element));
 
-        timerA = window.setTimeout(updateSize, 50);
-        timerB = window.setTimeout(updateSize, 180);
-        timerC = window.setTimeout(updateSize, 420);
+        syncNow();
+        const timerA = window.setTimeout(syncNow, 50);
+        const timerB = window.setTimeout(syncNow, 180);
+        const timerC = window.setTimeout(syncNow, 420);
 
         return () => {
-            if (raf) cancelAnimationFrame(raf);
-            if (timerA) window.clearTimeout(timerA);
-            if (timerB) window.clearTimeout(timerB);
-            if (timerC) window.clearTimeout(timerC);
             observer.disconnect();
+            window.clearTimeout(timerA);
+            window.clearTimeout(timerB);
+            window.clearTimeout(timerC);
         };
-    }, [payload]);
+    }, [payload, syncWindowSize]);
 
     useEffect(() => {
         setSnapshotFailed(false);
@@ -273,13 +322,6 @@ const CompactPreviewWindow = () => {
         richSnapshotFallbackTimerRef.current = window.setTimeout(() => {
             const img = richSnapshotImgRef.current;
             if (!img || !img.complete || img.naturalWidth <= 0 || img.naturalHeight <= 0) {
-                richPreviewFailureLog("snapshot image timeout -> fallback to html", {
-                    itemId: payload?.content,
-                    hasImageElement: !!img,
-                    complete: img?.complete ?? false,
-                    naturalWidth: img?.naturalWidth ?? 0,
-                    naturalHeight: img?.naturalHeight ?? 0
-                });
                 setSnapshotFailed(true);
             }
         }, 700);
@@ -302,7 +344,7 @@ const CompactPreviewWindow = () => {
                 <img
                     src={src}
                     alt="preview"
-                    onLoad={() => requestResizeRef.current?.()}
+                    onLoad={requestResize}
                     style={{ width: "auto", height: "auto", borderRadius: "4px" }}
                 />
             );
@@ -319,7 +361,7 @@ const CompactPreviewWindow = () => {
                     playsInline
                     onLoadedMetadata={(e) => {
                         seekVideoPreviewFrame(e.currentTarget);
-                        requestResizeRef.current?.();
+                        requestResize();
                     }}
                     style={{ width: "auto", height: "auto", borderRadius: "4px", background: "#000" }}
                 />
@@ -331,7 +373,7 @@ const CompactPreviewWindow = () => {
                     <img
                         src={effectiveRichImageFallbackSrc}
                         alt="rich text preview"
-                        onLoad={() => requestResizeRef.current?.()}
+                        onLoad={requestResize}
                         onError={() => setRichImageFallbackFailed(true)}
                         style={{ width: "auto", height: "auto", borderRadius: "4px" }}
                     />
@@ -348,7 +390,7 @@ const CompactPreviewWindow = () => {
                                 window.clearTimeout(richSnapshotFallbackTimerRef.current);
                                 richSnapshotFallbackTimerRef.current = null;
                             }
-                            requestResizeRef.current?.();
+                            requestResize();
                         }}
                         onError={() => {
                             if (richSnapshotFallbackTimerRef.current) {
@@ -368,18 +410,23 @@ const CompactPreviewWindow = () => {
                     htmlContent={cleanHtml || payload.htmlContent}
                     fallbackText={payload.preview || payload.content}
                     preview={false}
-                    style={{ maxHeight: "none", overflow: "visible", fontSize: "var(--clipboard-item-font-size)", lineHeight: "1.5" }}
+                    style={{
+                        maxHeight: "none",
+                        overflow: "visible",
+                        fontSize: "var(--clipboard-item-font-size)",
+                        lineHeight: "1.5"
+                    }}
                 />
             );
         }
         return payload.content || payload.preview || "";
-    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc]);
+    }, [payload, effectiveRichImageFallbackSrc, effectiveRichTextSnapshotSrc, requestResize]);
 
     return (
         <div className="compact-preview-root">
             <div
                 ref={containerRef}
-                className={`compact-popover-portal compact-preview-window theme-fluent ${payload?.contentType === "image" ? "compact-preview-image" : ""} ${payload?.contentType === "image" || payload?.contentType === "video" || !!effectiveRichImageFallbackSrc ? "compact-preview-media" : ""} ${payload?.colorMode === 'light' ? 'light-mode' : 'dark-mode'}`}
+                className={`compact-popover-portal compact-preview-window theme-fluent ${payload?.contentType === "image" ? "compact-preview-image" : ""} ${payload?.contentType === "image" || payload?.contentType === "video" || !!effectiveRichImageFallbackSrc ? "compact-preview-media" : ""} ${payload?.colorMode === "light" ? "light-mode" : "dark-mode"}`}
                 style={{ display: "flex", flexDirection: "column" }}
             >
                 <div ref={metaRef} className="popover-meta">

@@ -160,14 +160,25 @@
 .history-item.compact .item-tags-container {
     position: absolute;
     bottom: 2px;
-    right: 4px;
+    left: 8px;
+    right: auto;
     margin: 0 !important;
     z-index: 5;
     opacity: 0;
-    max-width: 60%;
+    max-width: calc(100% - 140px);
     flex-wrap: nowrap !important;
     overflow: hidden;
+    justify-content: flex-start;
     transition: opacity 0.2s ease;
+}
+
+.history-item.compact:has(.drag-handle) .item-tags-container {
+    left: 28px;
+}
+
+.history-item.compact .item-tags-container:not(:has(.tag-input)) {
+    -webkit-mask-image: linear-gradient(to right, black 0%, black 72%, transparent 100%);
+    mask-image: linear-gradient(to right, black 0%, black 72%, transparent 100%);
 }
 
 .history-item.compact:hover .item-tags-container,
@@ -180,10 +191,13 @@
     font-size: var(--clipboard-tag-font-size) !important;
     padding: 0px 4px !important;
     min-height: 16px;
+    max-width: 96px;
     line-height: 1;
     white-space: nowrap;
     display: inline-flex;
     align-items: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* Show Drag Handle in Compact Mode */
