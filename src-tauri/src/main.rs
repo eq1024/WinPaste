@@ -14,6 +14,7 @@ pub mod migration;
 use std::sync::atomic::{Ordering};
 use crate::global_state::*;
 use crate::app::setup;
+use tauri::{Emitter, Manager};
 
 fn main() {
     let _ = dotenvy::dotenv();
@@ -30,7 +31,19 @@ fn main() {
             }
         }).build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
-        .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // 已有实例运行时，第二次启动不再静默退出：
+            // 唤起主窗口（与托盘"显示主界面"行为一致），
+            // 修复"旧版本还在跑，双击新版图标没反应"的问题。
+            if let Some(window) = app.get_webview_window("main") {
+                let was_visible = window.is_visible().unwrap_or(false);
+                let _ = window.show();
+                if !was_visible {
+                    let _ = app.emit("window-shown", ());
+                }
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
         .plugin(tauri_plugin_http::init())
         .setup(|app| {
@@ -55,6 +68,7 @@ fn main() {
             app::commands::search_clipboard_history,
             app::commands::delete_clipboard_entry,
             app::commands::clear_clipboard_history,
+            app::commands::clear_invalid_file_entries,
             app::commands::get_tag_items,
             app::commands::get_all_tags_info,
             app::commands::rename_tag_globally,
@@ -97,6 +111,9 @@ fn main() {
             app::commands::set_data_path,
             app::commands::toggle_autostart,
             app::commands::is_autostart_enabled,
+            app::commands::set_autostart_admin,
+            app::commands::is_autostart_admin_enabled,
+            app::commands::get_installer_language,
             app::commands::set_windows_clipboard_history,
             app::commands::get_windows_clipboard_history,
             app::commands::set_win_clipboard_disabled,

@@ -37,6 +37,7 @@ import { getFileIcon as getFileIconDataUrl, peekFileIcon } from "../../../shared
 import { getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
 import { useSettingsStore } from "../../../shared/store/settingsStore";
 import { useHistoryStore } from "../../../shared/store/historyStore";
+import { useUIStore } from "../../../shared/store/uiStore";
 
 const RICH_IMAGE_FALLBACK_PREFIX = "<!--WINPASTE_RICH_IMAGE:";
 const RICH_IMAGE_FALLBACK_SUFFIX = "-->";
@@ -132,6 +133,7 @@ const ClipboardItem = ({
 }: ClipboardItemProps & { t: (key: string) => string }) => {
     const { language, richTextSnapshotPreview, showSourceAppIcon, compactMode, privacyProtection, autoHideTags, colorMode, clipboardItemFontSize, clipboardTagFontSize } = useSettingsStore();
     const { tagInput, revealedIds, editingTagsId } = useHistoryStore();
+    const windowShowTick = useUIStore((s) => s.windowShowTick);
     const isSelected = useHistoryStore(s => s.isKeyboardMode && index === s.selectedIndex);
 
     const isSensitiveHidden = privacyProtection && (item.tags?.includes('sensitive') || item.tags?.includes('密码') || item.tags?.includes('password')) && !revealedIds.has(item.id);
@@ -239,11 +241,10 @@ const ClipboardItem = ({
     useEffect(() => {
         if (!item.is_external || item.file_preview_exists === false || !onExternalMissing) return;
         const el = itemRef.current;
-        if (!el || typeof IntersectionObserver === "undefined") return;
+        if (!el) return;
 
-        const observer = new IntersectionObserver((entries) => {
-            if (!entries.some(entry => entry.isIntersecting)) return;
-
+        const runCheck = () => {
+            if (externalCheckCache.size > 2000) externalCheckCache.clear();
             const now = Date.now();
             const lastCheck = externalCheckCache.get(item.id) || 0;
             if (now - lastCheck < EXTERNAL_CHECK_TTL_MS) return;
@@ -254,11 +255,31 @@ const ClipboardItem = ({
                     if (!exists) onExternalMissing(item.id);
                 })
                 .catch(() => {});
-        }, { rootMargin: "80px 0px" });
+        };
 
-        observer.observe(el);
-        return () => observer.disconnect();
-    }, [item.id, item.content, item.is_external, item.file_preview_exists, onExternalMissing]);
+        let observer: IntersectionObserver | null = null;
+        if (typeof IntersectionObserver !== "undefined") {
+            observer = new IntersectionObserver((entries) => {
+                if (entries.some(entry => entry.isIntersecting)) runCheck();
+            }, { rootMargin: "80px 0px" });
+            observer.observe(el);
+        }
+
+        // IntersectionObserver 只在布局/滚动导致相交状态变化时回调。
+        // 面板打开时条目如果本来就在可视区域内，不会有任何回调；
+        // 因此挂载时/面板每次显示（windowShowTick 变化）时，只要条目当前
+        // 位于可视区域内就立即检测一次。
+        const rect = el.getBoundingClientRect();
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+        const inView =
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.bottom > -80 &&
+            rect.top < viewportHeight + 80;
+        if (inView) runCheck();
+
+        return () => observer?.disconnect();
+    }, [item.id, item.content, item.is_external, item.file_preview_exists, onExternalMissing, windowShowTick]);
 
     const renderFilePreview = () => {
         if (item.file_preview_exists === false) return <div className="file-thumbnail-card error-bg" title={t('file_deleted')}><div className="file-icon-wrapper error-icon"><FileQuestion size={24} /></div><div className="file-info-wrapper"><div className="file-name error-text">{t('file_deleted')}</div><div className="file-hint error-text">{filePaths.length > 1 ? item.content : filePaths[0].split(/[\\/]/).pop()}</div></div></div>;

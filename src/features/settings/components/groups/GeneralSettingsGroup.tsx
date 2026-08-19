@@ -1,5 +1,6 @@
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
 interface LabelWithHintProps {
@@ -15,6 +16,8 @@ interface GeneralSettingsGroupProps {
     LabelWithHint: ComponentType<LabelWithHintProps>;
     autoStart: boolean;
     setAutoStart: (val: boolean) => void;
+    autoStartAdmin: boolean;
+    setAutoStartAdmin: (val: boolean) => void;
     silentStart: boolean;
     setSilentStart: (val: boolean) => void;
     hideTrayIcon: boolean;
@@ -51,6 +54,8 @@ const GeneralSettingsGroup = ({
     LabelWithHint,
     autoStart,
     setAutoStart,
+    autoStartAdmin,
+    setAutoStartAdmin,
     silentStart,
     setSilentStart,
     hideTrayIcon,
@@ -82,7 +87,7 @@ const GeneralSettingsGroup = ({
         </div>
         {!collapsed && (
             <div className="group-content">
-                <div className="setting-item">
+                <div className="setting-item" style={autoStartAdmin ? { opacity: 0.5, pointerEvents: 'none' } : undefined}>
                     <div className="item-label-group">
                         <span className="item-label">{t('autostart')}</span>
                     </div>
@@ -95,6 +100,54 @@ const GeneralSettingsGroup = ({
                                 const enabled = e.target.checked;
                                 setAutoStart(enabled);
                                 invoke("toggle_autostart", { enabled }).catch(console.error);
+                            }}
+                        />
+                        <div className="toggle"><div className="left" /><div className="right" /></div>
+                    </label>
+                </div>
+
+                <div className="setting-item">
+                    <LabelWithHint
+                        label={t('autostart_admin')}
+                        hint={t('autostart_admin_hint')}
+                        hintKey="autostart_admin"
+                    />
+                    <label className="switch">
+                        <input
+                            className="cb"
+                            type="checkbox"
+                            checked={autoStartAdmin}
+                            onChange={async (e) => {
+                                const enabled = e.target.checked;
+                                try {
+                                    const isAdmin = await invoke<boolean>("check_is_admin");
+                                    if (!isAdmin) {
+                                        // 未提权：保存意图并以管理员身份重启，启动时落地生效
+                                        const confirmed = await ask(
+                                            enabled ? t('autostart_admin_requires_admin') : t('autostart_admin_disable_requires_admin'),
+                                            { title: t('autostart_admin'), kind: 'warning' }
+                                        );
+                                        if (!confirmed) return;
+                                        await invoke("save_setting", { key: 'app.autostart_admin', value: String(enabled) });
+                                        setAutoStartAdmin(enabled);
+                                        try {
+                                            await invoke("restart_as_admin");
+                                        } catch (restartErr) {
+                                            // 用户取消了 UAC：回滚意图
+                                            await invoke("save_setting", { key: 'app.autostart_admin', value: String(!enabled) });
+                                            setAutoStartAdmin(!enabled);
+                                            throw restartErr;
+                                        }
+                                        return;
+                                    }
+
+                                    await invoke("set_autostart_admin", { enabled });
+                                    setAutoStartAdmin(enabled);
+                                    await invoke("save_setting", { key: 'app.autostart_admin', value: String(enabled) });
+                                } catch (err) {
+                                    console.error("Failed to toggle admin autostart:", err);
+                                    alert(`${t('autostart_admin_failed')}: ${err}`);
+                                }
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>

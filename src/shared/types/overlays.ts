@@ -3,10 +3,16 @@ export type ToastItem = {
   msg: string;
 };
 
+export type ConfirmOption = {
+  id: string;
+  label: string;
+};
+
 export type ConfirmDialogState = {
   show: boolean;
   title: string;
   message: string;
-  onConfirm: () => void;
+  options?: ConfirmOption[];
+  onConfirm: (selectedId?: string) => void;
   onCancel?: () => void;
 };

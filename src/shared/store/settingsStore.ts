@@ -16,6 +16,7 @@ interface SettingsState {
   
   // General
   autoStart: boolean;
+  autoStartAdmin: boolean;
   silentStart: boolean;
   hideTrayIcon: boolean;
   edgeDocking: boolean;
@@ -73,6 +74,7 @@ interface SettingsState {
   setClipboardItemFontSize: (size: number) => void;
   setClipboardTagFontSize: (size: number) => void;
   setAutoStart: (enabled: boolean) => void;
+  setAutoStartAdmin: (enabled: boolean) => void;
   setSilentStart: (enabled: boolean) => void;
   setHideTrayIcon: (enabled: boolean) => void;
   setEdgeDocking: (enabled: boolean) => void;
@@ -124,6 +126,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   clipboardItemFontSize: 13,
   clipboardTagFontSize: 10,
   autoStart: true,
+  autoStartAdmin: false,
   silentStart: true,
   hideTrayIcon: false,
   edgeDocking: false,
@@ -172,6 +175,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setClipboardItemFontSize: (clipboardItemFontSize) => set({ clipboardItemFontSize }),
   setClipboardTagFontSize: (clipboardTagFontSize) => set({ clipboardTagFontSize }),
   setAutoStart: (autoStart) => set({ autoStart }),
+  setAutoStartAdmin: (autoStartAdmin) => set({ autoStartAdmin }),
   setSilentStart: (silentStart) => set({ silentStart }),
   setHideTrayIcon: (hideTrayIcon) => set({ hideTrayIcon }),
   setEdgeDocking: (edgeDocking) => set({ edgeDocking }),

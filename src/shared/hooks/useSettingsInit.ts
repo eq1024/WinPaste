@@ -42,16 +42,33 @@ export const useSettingsInit = () => {
         if (res["app.language"]) {
            setLanguage(res["app.language"] as Locale);
         } else {
-           const sysLang = navigator.language.toLowerCase();
-           if (sysLang.startsWith('zh')) {
-             if (sysLang.includes('tw') || sysLang.includes('hk') || sysLang.includes('mo')) {
-               setLanguage('tw');
-             } else {
-               setLanguage('zh');
-             }
-           } else {
-               setLanguage('en');
-           }
+           // 用户未在应用内设置过语言：
+           // 优先跟随安装程序的语言选择（NSIS 写入注册表），
+           // 否则回退到系统语言。
+           const applySystemLanguage = () => {
+              const sysLang = navigator.language.toLowerCase();
+              if (sysLang.startsWith('zh')) {
+                if (sysLang.includes('tw') || sysLang.includes('hk') || sysLang.includes('mo')) {
+                  setLanguage('tw');
+                } else {
+                  setLanguage('zh');
+                }
+              } else {
+                  setLanguage('en');
+              }
+           };
+           invoke<string | null>("get_installer_language")
+             .then((installerLang) => {
+                if (disposed) return;
+                if (installerLang === 'zh' || installerLang === 'tw' || installerLang === 'en') {
+                  setLanguage(installerLang);
+                } else {
+                  applySystemLanguage();
+                }
+             })
+             .catch(() => {
+                if (!disposed) applySystemLanguage();
+             });
         }
       })
       .catch((err) => {

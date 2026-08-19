@@ -169,6 +169,86 @@ pub fn clear_clipboard_history(
     state.repo.clear(Some(&data_dir)).map_err(AppError::from)
 }
 
+/// 判断外部条目（文件/视频/图片路径）的源文件是否已丢失。
+/// 多路径条目中任意一个源文件不存在即视为失效（粘贴时会出错或静默丢文件）。
+fn external_entry_paths_missing(content: &str) -> bool {
+    let paths: Vec<&str> = content
+        .lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .collect();
+    if paths.is_empty() {
+        return false;
+    }
+    paths.iter().any(|raw| !external_path_exists(raw))
+}
+
+fn external_path_exists(raw: &str) -> bool {
+    // data: URL（内嵌内容）不是外部路径，视为有效
+    if raw.starts_with("data:") {
+        return true;
+    }
+    let stripped = raw.strip_prefix("file://").unwrap_or(raw);
+    let stripped = if stripped.starts_with('/') && stripped.chars().nth(2) == Some(':') {
+        &stripped[1..]
+    } else {
+        stripped
+    };
+    match urlencoding::decode(stripped) {
+        Ok(decoded) => std::path::Path::new(decoded.as_ref()).exists(),
+        Err(_) => std::path::Path::new(stripped).exists(),
+    }
+}
+
+#[tauri::command]
+pub fn clear_invalid_file_entries(
+    state: State<'_, DbState>,
+    session: State<'_, SessionHistory>,
+    app_data: State<'_, AppDataDir>,
+) -> AppResult<usize> {
+    let mut removed = 0usize;
+
+    // 1. 清理会话内（未持久化）的失效条目
+    {
+        let mut session_items = session.inner().0.lock().unwrap();
+        let before = session_items.len();
+        session_items.retain(|item| !item.is_external || !external_entry_paths_missing(&item.content));
+        removed += before - session_items.len();
+    }
+
+    // 2. 清理数据库中的失效条目
+    let data_dir = app_data.0.lock().unwrap().clone();
+    let conn = state.conn.lock().unwrap();
+    let candidate_ids: Vec<i64> = {
+        let mut stmt = conn
+            .prepare("SELECT id, content FROM clipboard_history WHERE is_external = 1")
+            .map_err(AppError::from)?;
+        let rows = stmt
+            .query_map([], |row| {
+                let id: i64 = row.get(0)?;
+                let content: String = row.get(1)?;
+                Ok((id, content))
+            })
+            .map_err(AppError::from)?;
+        let mut ids = Vec::new();
+        for row in rows {
+            let (id, content) = row.map_err(AppError::from)?;
+            if external_entry_paths_missing(&content) {
+                ids.push(id);
+            }
+        }
+        ids
+    };
+
+    for id in candidate_ids {
+        if state.repo.delete_with_conn(&conn, id, Some(&data_dir)).is_ok() {
+            removed += 1;
+        }
+    }
+
+    Ok(removed)
+}
+
 #[tauri::command]
 pub fn get_tag_items(state: State<'_, DbState>, tag: String) -> AppResult<Vec<ClipboardEntry>> {
     let mut history = state.tag_repo.get_entries_by_tag(&tag).map_err(AppError::from)?;

@@ -45,6 +45,11 @@ export const translations = {
 
         // Settings - General
         autostart: "开机自启动",
+        autostart_admin: "管理员权限开机自启动",
+        autostart_admin_hint: "开启后每次开机自动以管理员身份静默启动（仅在开启时授权一次 UAC，之后开机不再弹窗）。开启会同时关闭普通开机自启，并需要以管理员身份重启应用。",
+        autostart_admin_requires_admin: "开启此功能需要管理员权限。是否保存设置并立即以管理员身份重启 WinPaste？（重启后生效）",
+        autostart_admin_disable_requires_admin: "关闭此功能同样需要管理员权限。是否保存设置并立即以管理员身份重启 WinPaste？（重启后生效）",
+        autostart_admin_failed: "操作失败",
         silent_start: "静默启动",
         silent_start_hint: "启动后不显示主界面，仅可通过快捷键或托盘呼出",
         sound_effects: "按键音效",
@@ -100,6 +105,10 @@ export const translations = {
         search_hotkey_label: "搜索快捷键",
         clear_history_title: "清除历史记录?",
         clear_history_confirm: "确认清除",
+        clear_all_entries: "清除全部",
+        clear_invalid_entries: "清除已失效",
+        invalid_cleared: "已清除失效记录",
+        no_invalid_entries: "没有失效记录",
         global_hotkey: "全局快捷键",
         hotkey_recording_hint: "请按快捷键组合，ESC 取消",
         hotkey_click_hint: "点击右侧区域开始录制",
@@ -455,6 +464,10 @@ export const translations = {
         vibrancy_enabled: "Enable Vibrancy",
         clear_history_title: "Clear History?",
         clear_history_confirm: "Are you sure you want to clear history? Pinned and tagged items will be preserved.",
+        clear_all_entries: "Clear All",
+        clear_invalid_entries: "Clear Invalid",
+        invalid_cleared: "Invalid entries cleared",
+        no_invalid_entries: "No invalid entries",
 
         // Header
         settings: "Settings",
@@ -493,6 +506,11 @@ export const translations = {
 
         // Settings - General
         autostart: "Launch at Startup",
+        autostart_admin: "Launch at Startup as Administrator",
+        autostart_admin_hint: "When enabled, WinPaste starts silently with administrator privileges at every logon (UAC is requested only once when enabling; no prompt afterwards). Enabling disables normal startup and requires restarting the app as administrator.",
+        autostart_admin_requires_admin: "Enabling this feature requires administrator privileges. Save the setting and restart WinPaste as administrator now? (Takes effect after restart)",
+        autostart_admin_disable_requires_admin: "Disabling this feature also requires administrator privileges. Save the setting and restart WinPaste as administrator now? (Takes effect after restart)",
+        autostart_admin_failed: "Operation failed",
         silent_start: "Silent Start",
         silent_start_hint: "Don't show the main window on startup, only show via hotkey or tray",
         sound_effects: "Sound Effects",
@@ -935,6 +953,11 @@ export const translations = {
 
         // Settings - General
         autostart: "開機自啟動",
+        autostart_admin: "管理員權限開機自啟動",
+        autostart_admin_hint: "開啟後每次開機自動以管理員身份靜默啟動（僅在開啟時授權一次 UAC，之後開機不再彈窗）。開啟會同時關閉普通開機自啟動，並需要以管理員身份重啟應用。",
+        autostart_admin_requires_admin: "開啟此功能需要管理員權限。是否儲存設定並立即以管理員身份重啟 WinPaste？（重啟後生效）",
+        autostart_admin_disable_requires_admin: "關閉此功能同樣需要管理員權限。是否儲存設定並立即以管理員身份重啟 WinPaste？（重啟後生效）",
+        autostart_admin_failed: "操作失敗",
         silent_start: "靜默啟動",
         silent_start_hint: "啟動後不顯示主界面，僅可透過快速鍵或託盤呼出",
         sound_effects: "按鍵音效",
@@ -990,6 +1013,10 @@ export const translations = {
         search_hotkey_label: "搜尋快速鍵",
         clear_history_title: "清除歷史紀錄?",
         clear_history_confirm: "確認清除",
+        clear_all_entries: "清除全部",
+        clear_invalid_entries: "清除已失效",
+        invalid_cleared: "已清除失效記錄",
+        no_invalid_entries: "沒有失效記錄",
         global_hotkey: "全域快速鍵",
         hotkey_recording_hint: "請按快速鍵組合，ESC 取消",
         hotkey_click_hint: "點擊右側區域開始錄製",

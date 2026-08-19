@@ -110,8 +110,6 @@ const AppMainContent = ({
 
   const {
     search,
-    selectedIndex,
-    isKeyboardMode,
     hasMore,
     isLoadingMore
   } = useHistoryStore();
@@ -271,8 +269,6 @@ const AppMainContent = ({
             ref={virtualListRef}
             items={unpinnedItems}
             compactMode={compactMode}
-            selectedIndex={selectedIndex - pinnedItems.length}
-            isKeyboardMode={isKeyboardMode}
             header={
               <div style={{ marginBottom: (hasStickies || pinnedItems.length > 0) ? 8 : 0 }}>
                 {hasStickies && (

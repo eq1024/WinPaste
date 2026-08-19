@@ -14,6 +14,8 @@ interface UIState {
   isRecordingSequential: boolean;
   isRecordingRich: boolean;
   isRecordingSearch: boolean;
+  // 面板每次显示时递增，用于触发条目级“源文件失效检测”的重新执行
+  windowShowTick: number;
 
   // Actions
   setShowSettings: (show: boolean) => void;
@@ -29,6 +31,7 @@ interface UIState {
   setIsRecordingSequential: (isRecordingSequential: boolean) => void;
   setIsRecordingRich: (isRecordingRich: boolean) => void;
   setIsRecordingSearch: (isRecordingSearch: boolean) => void;
+  bumpWindowShowTick: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -51,6 +54,7 @@ export const useUIStore = create<UIState>((set) => ({
   isRecordingSequential: false,
   isRecordingRich: false,
   isRecordingSearch: false,
+  windowShowTick: 0,
 
   setShowSettings: (showSettings) => set({ showSettings }),
   setShowTagManager: (showTagManager) => set({ showTagManager }),
@@ -67,4 +71,5 @@ export const useUIStore = create<UIState>((set) => ({
   setIsRecordingSequential: (isRecordingSequential) => set({ isRecordingSequential }),
   setIsRecordingRich: (isRecordingRich) => set({ isRecordingRich }),
   setIsRecordingSearch: (isRecordingSearch) => set({ isRecordingSearch }),
+  bumpWindowShowTick: () => set((state) => ({ windowShowTick: state.windowShowTick + 1 })),
 }));

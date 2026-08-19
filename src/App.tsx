@@ -104,6 +104,7 @@ const App = () => {
     clipboardItemFontSize,
     clipboardTagFontSize,
     setAutoStart,
+    setAutoStartAdmin,
     stickyEnabled,
     arrowKeySelection,
     soundEnabled,
@@ -333,6 +334,9 @@ const App = () => {
       }
       setSelectedIndexAdapter(0);
       setIsKeyboardMode(false);
+      // 通知所有可见条目重新执行源文件失效检测
+      // （IntersectionObserver 只在布局变化时回调，窗口显示本身不会触发它）
+      useUIStore.getState().bumpWindowShowTick();
     });
 
     const unlistenSearchFocus = listen("focus-search-input", () => {
@@ -372,6 +376,7 @@ const App = () => {
     setDataPath: setDataPath as any,
     setInstalledApps: setInstalledApps as any,
     setAutoStart: setAutoStart as any,
+    setAutoStartAdmin: setAutoStartAdmin as any,
     setWinClipboardDisabled: setWinClipboardDisabled as any,
     setDefaultApps: setDefaultAppsAdapter
   });
@@ -686,6 +691,7 @@ const App = () => {
         open={confirmDialog.show}
         title={confirmDialog.title}
         message={confirmDialog.message}
+        options={confirmDialog.options}
         confirmLabel={t('confirm')}
         cancelLabel={t('cancel')}
         onClose={closeConfirm}

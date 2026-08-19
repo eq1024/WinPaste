@@ -39,6 +39,8 @@ export const useSettingsPanelProps = ({
     collapsedGroups: state.collapsedGroups,
     autoStart: state.autoStart,
     setAutoStart: state.setAutoStart,
+    autoStartAdmin: state.autoStartAdmin,
+    setAutoStartAdmin: state.setAutoStartAdmin,
     silentStart: state.silentStart,
     setSilentStart: state.setSilentStart,
     persistent: state.persistent,

@@ -509,6 +509,49 @@ pub fn get_clipboard_sequence_number() -> u32 {
     unsafe { windows::Win32::System::DataExchange::GetClipboardSequenceNumber() }
 }
 
+/// 快速判断剪贴板当前是否携带图片类格式（不做数据拷贝）。
+/// 用于富文本捕获时决定是否需要做图片兜底探测，避免纯文本复制白等重试。
+pub unsafe fn clipboard_has_image() -> bool {
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, IsClipboardFormatAvailable, OpenClipboard,
+        RegisterClipboardFormatW,
+    };
+
+    if OpenClipboard(None).is_err() {
+        return false;
+    }
+
+    let result = (|| {
+        if IsClipboardFormatAvailable(CF_DIB).is_ok()
+            || IsClipboardFormatAvailable(CF_DIBV5).is_ok()
+        {
+            return true;
+        }
+
+        for name in [
+            "PNG",
+            "image/png",
+            "JFIF",
+            "JPEG",
+            "image/jpeg",
+            "GIF",
+            "Animated GIF",
+            "image/gif",
+            "Graphics Interchange Format",
+        ] {
+            let name_w: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+            let format_id = RegisterClipboardFormatW(windows::core::PCWSTR(name_w.as_ptr()));
+            if format_id != 0 && IsClipboardFormatAvailable(format_id).is_ok() {
+                return true;
+            }
+        }
+        false
+    })();
+
+    let _ = CloseClipboard();
+    result
+}
+
 /// Get raw bytes from a specific clipboard format by name
 pub unsafe fn get_clipboard_raw_format(format_name: &str) -> Option<Vec<u8>> {
     use windows::Win32::System::DataExchange::RegisterClipboardFormatW;

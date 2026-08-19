@@ -67,6 +67,9 @@ pub fn toggle_autostart(enabled: bool) -> AppResult<()> {
     let cmd = format!("\"{}\" --minimized", app_path);
 
     if enabled {
+        // 互斥：开启普通自启时尝试移除管理员自启任务（失败可忽略，
+        // 正常情况下 UI 会阻止两个自启同时开启）
+        let _ = remove_autostart_admin_task();
         key.set_value("winpaste", &cmd).map_err(|e| AppError::Internal(e.to_string()))?;
     } else {
         let _ = key.delete_value("winpaste");
@@ -82,6 +85,134 @@ pub fn is_autostart_enabled() -> AppResult<bool> {
     let key = hkcu.open_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Run")
         .map_err(|e| AppError::Internal(e.to_string()))?;
     Ok(key.get_value::<String, _>("winpaste").is_ok() )
+}
+
+// ============ 管理员权限开机自启动（任务计划程序） ============
+
+const AUTOSTART_ADMIN_TASK_NAME: &str = "WinPaste";
+
+fn run_schtasks_silent(args: &[&str]) -> std::io::Result<std::process::Output> {
+    use std::os::windows::process::CommandExt;
+    std::process::Command::new("schtasks")
+        .args(args)
+        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        .output()
+}
+
+pub fn autostart_admin_task_exists() -> bool {
+    match run_schtasks_silent(&["/Query", "/TN", AUTOSTART_ADMIN_TASK_NAME]) {
+        Ok(output) => output.status.success(),
+        Err(_) => false,
+    }
+}
+
+fn remove_autostart_admin_task() -> std::io::Result<()> {
+    if !autostart_admin_task_exists() {
+        return Ok(());
+    }
+    run_schtasks_silent(&["/Delete", "/TN", AUTOSTART_ADMIN_TASK_NAME, "/F"]).map(|_| ())
+}
+
+/// 开启/关闭"以管理员权限开机自启动"（任务计划程序，登录时触发 + 最高权限）。
+/// 开启时需要管理员权限（创建 HIGHEST 任务需提权）；开启后每次开机静默提权启动，
+/// 不会再弹 UAC。
+#[tauri::command]
+pub fn set_autostart_admin(enabled: bool) -> AppResult<()> {
+    let exe_path = std::env::current_exe()
+        .map_err(|e| AppError::Internal(e.to_string()))?
+        .to_string_lossy()
+        .to_string();
+
+    if enabled {
+        // 互斥：关闭普通 HKCU Run 自启，避免开机双重启动
+        {
+            use winreg::enums::*;
+            use winreg::RegKey;
+            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+            if let Ok(key) = hkcu.open_subkey_with_flags(
+                "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                KEY_WRITE | KEY_READ,
+            ) {
+                let _ = key.delete_value("winpaste");
+            }
+        }
+
+        let task_run = format!("\"{}\" --minimized", exe_path);
+        let output = run_schtasks_silent(&[
+            "/Create",
+            "/TN",
+            AUTOSTART_ADMIN_TASK_NAME,
+            "/TR",
+            &task_run,
+            "/SC",
+            "ONLOGON",
+            "/RL",
+            "HIGHEST",
+            "/F",
+        ])
+        .map_err(|e| AppError::Internal(format!("执行 schtasks 失败: {}", e)))?;
+
+        if !output.status.success() || !autostart_admin_task_exists() {
+            let err = String::from_utf8_lossy(&output.stderr);
+            if err.contains("拒绝访问")
+                || err.contains("Access is denied")
+                || err.contains("0x80070005")
+            {
+                return Err(AppError::Validation(
+                    "需要管理员权限才能开启管理员开机自启动".to_string(),
+                ));
+            }
+            return Err(AppError::Internal(format!(
+                "schtasks create failed: {} {}",
+                err,
+                String::from_utf8_lossy(&output.stdout)
+            )));
+        }
+    } else {
+        let _ = remove_autostart_admin_task();
+        if autostart_admin_task_exists() {
+            return Err(AppError::Validation(
+                "删除开机自启任务失败：需要管理员权限。请以管理员身份重启应用后再关闭".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn is_autostart_admin_enabled() -> bool {
+    autostart_admin_task_exists()
+}
+
+/// 读取安装程序语言选择（NSIS MUI_LANGDLL 写入 HKCU）。
+/// 返回应用 locale：zh / tw / en；未安装或未选择时返回 None。
+#[tauri::command]
+pub fn get_installer_language() -> AppResult<Option<String>> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    // NSIS 模板：MANUKEY = Software\<manufacturer>，MANUPRODUCTKEY = <MANUKEY>\<productName>
+    // manufacturer 未配置时取 identifier 第二段（com.winpaste.app -> winpaste）
+    const MANUPRODUCTKEY: &str = "Software\\winpaste\\WinPaste";
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let Ok(key) = hkcu.open_subkey(MANUPRODUCTKEY) else {
+        return Ok(None);
+    };
+    let Ok(raw) = key.get_value::<String, _>("Installer Language") else {
+        return Ok(None);
+    };
+    let langid: u32 = match raw.trim().parse() {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+
+    Ok(match langid {
+        2052 => Some("zh".to_string()),                       // 简体中文
+        1028 | 3076 | 5124 | 4100 => Some("tw".to_string()),  // 繁体中文
+        1033 => Some("en".to_string()),                       // 英语
+        _ => None,
+    })
 }
 
 #[tauri::command]

@@ -1,10 +1,11 @@
 import { useCallback, useState } from "react";
-import type { ConfirmDialogState, ToastItem } from "../types";
+import type { ConfirmDialogState, ConfirmOption, ToastItem } from "../types";
 
 const emptyConfirm: ConfirmDialogState = {
   show: false,
   title: "",
   message: "",
+  options: undefined,
   onConfirm: () => {},
   onCancel: undefined,
 };
@@ -25,11 +26,18 @@ export const useOverlays = () => {
   }, []);
 
   const openConfirm = useCallback(
-    (opts: { title: string; message: string; onConfirm: () => void; onCancel?: () => void }) => {
+    (opts: {
+      title: string;
+      message?: string;
+      options?: ConfirmOption[];
+      onConfirm: (selectedId?: string) => void;
+      onCancel?: () => void;
+    }) => {
       setConfirmDialog({
         show: true,
         title: opts.title,
-        message: opts.message,
+        message: opts.message ?? "",
+        options: opts.options,
         onConfirm: opts.onConfirm,
         onCancel: opts.onCancel,
       });

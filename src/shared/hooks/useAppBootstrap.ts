@@ -7,6 +7,7 @@ interface UseAppBootstrapOptions {
   setDataPath: Dispatch<SetStateAction<string>>;
   setInstalledApps: Dispatch<SetStateAction<InstalledAppOption[]>>;
   setAutoStart: Dispatch<SetStateAction<boolean>>;
+  setAutoStartAdmin: Dispatch<SetStateAction<boolean>>;
   setWinClipboardDisabled: Dispatch<SetStateAction<boolean>>;
   setDefaultApps: Dispatch<SetStateAction<DefaultAppsMap>>;
 }
@@ -15,6 +16,7 @@ export const useAppBootstrap = ({
   setDataPath,
   setInstalledApps,
   setAutoStart,
+  setAutoStartAdmin,
   setWinClipboardDisabled,
   setDefaultApps
 }: UseAppBootstrapOptions) => {
@@ -31,6 +33,10 @@ export const useAppBootstrap = ({
 
     invoke<boolean>("is_autostart_enabled").then((enabled) => {
       if (!disposed) setAutoStart(enabled);
+    }).catch(console.error);
+
+    invoke<boolean>("is_autostart_admin_enabled").then((enabled) => {
+      if (!disposed) setAutoStartAdmin(enabled);
     }).catch(console.error);
 
     invoke<boolean>("get_windows_clipboard_history").then((enabled) => {
@@ -56,6 +62,7 @@ export const useAppBootstrap = ({
     setDataPath,
     setInstalledApps,
     setAutoStart,
+    setAutoStartAdmin,
     setWinClipboardDisabled,
     setDefaultApps
   ]);

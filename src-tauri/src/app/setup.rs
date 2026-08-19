@@ -166,6 +166,23 @@ fn apply_startup_resets(repo: &impl SettingsRepository) {
             }
         }
     }
+
+    // 管理员权限开机自启动：设置变更需要提权时，前端会先保存意图再重启为管理员。
+    // 这里在（提权）启动时把意图落地为任务计划程序的实际状态。
+    let autostart_admin = repo
+        .get("app.autostart_admin")
+        .unwrap_or(Some("false".to_string()))
+        .unwrap_or("false".to_string());
+    let task_exists = crate::app::commands::system_cmd::is_autostart_admin_enabled();
+    if autostart_admin == "true" {
+        if !task_exists {
+            info!(">>> [STARTUP] Applying pending admin autostart (create task).");
+            let _ = crate::app::commands::system_cmd::set_autostart_admin(true);
+        }
+    } else if task_exists && crate::app::commands::system_cmd::check_is_admin() {
+        info!(">>> [STARTUP] Admin autostart disabled by user, removing task.");
+        let _ = crate::app::commands::system_cmd::set_autostart_admin(false);
+    }
 }
 
 pub struct StartupSettings {
