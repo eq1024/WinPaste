@@ -13,11 +13,9 @@ use crate::infrastructure::repository::sticky_repo::SqliteStickyRepository;
 use crate::services::encryption_queue::init_encryption_queue;
 use crate::services::sensitive_align::spawn_sensitive_alignment;
 use crate::infrastructure::windows_ext::WindowExt;
-use crate::app::window_manager::{toggle_window, release_win_keys, restore_last_focus};
+use crate::app::window_manager::toggle_window;
 #[cfg(target_os = "windows")]
 use crate::app::hooks::{keyboard_proc, mouse_proc};
-#[cfg(target_os = "windows")]
-use crate::app::system::tray_subclass_proc;
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::{HINSTANCE, HWND, POINT, RECT};
 #[cfg(target_os = "windows")]
@@ -27,13 +25,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState;
 #[cfg(target_os = "windows")]
-use windows::Win32::UI::Shell::SetWindowSubclass;
-#[cfg(target_os = "windows")]
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 
 static WINDOW_SIZE_SAVE_PENDING: AtomicBool = AtomicBool::new(false);
 static LAST_WINDOW_SIZE_EVENT_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_WINDOW_SIZE: OnceLock<Mutex<(u32, u32)>> = OnceLock::new();
+static LIGHTWEIGHT_CHECK_ITEM: OnceLock<Mutex<Option<tauri::menu::CheckMenuItem<tauri::Wry>>>> = OnceLock::new();
 
 pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let app_handle = app.handle().clone();
@@ -80,7 +77,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     start_services(app, &settings, app_handle.clone());
     
     // 8. Tray Setup
-    setup_tray(app, settings.hide_tray_icon);
+    setup_tray(app, settings.hide_tray_icon, settings.lightweight_mode);
     
     // 9. Theme Initial Application
     apply_initial_theme(app);
@@ -97,6 +94,13 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // 11. TaskbarCreated & Subclass
     #[cfg(target_os = "windows")]
     setup_taskbar_listener(app);
+
+    // 12. Lightweight mode: release the webview immediately after startup if enabled.
+    // All one-time init above (theme, taskbar subclass, size, focus) has already run,
+    // so the window can be safely destroyed and rebuilt on demand later.
+    if settings.lightweight_mode {
+        crate::app::window_manager::destroy_main_window(&app_handle);
+    }
 
     Ok(())
 }
@@ -202,6 +206,7 @@ pub struct StartupSettings {
     pub search_hotkey: String,
     pub sound_enabled: bool,
     pub hide_tray_icon: bool,
+    pub lightweight_mode: bool,
     pub edge_docking: bool,
     pub follow_mouse: bool,
     pub follow_caret: bool,
@@ -231,6 +236,7 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
         search_hotkey: repo.get("app.search_hotkey").unwrap_or(Some("".to_string())).unwrap_or("".to_string()),
         sound_enabled: repo.get("app.sound_enabled").unwrap_or(Some("false".to_string())).map(|v| v == "true").unwrap_or(false),
         hide_tray_icon: repo.get("app.hide_tray_icon").unwrap_or(Some("false".to_string())).map(|v| v == "true").unwrap_or(false),
+        lightweight_mode: repo.get("app.lightweight_mode").unwrap_or(Some("false".to_string())).map(|v| v == "true").unwrap_or(false),
         edge_docking: repo.get("app.edge_docking").unwrap_or(Some("false".to_string())).map(|v| v == "true").unwrap_or(false),
         follow_mouse: repo.get("app.follow_mouse").unwrap_or(Some("true".to_string())).map(|v| v == "true").unwrap_or(true),
         follow_caret: repo.get("app.follow_caret").unwrap_or(Some("false".to_string())).map(|v| v == "true").unwrap_or(false),
@@ -275,6 +281,7 @@ fn setup_state(app: &App, conn_arc: std::sync::Arc<std::sync::Mutex<rusqlite::Co
         search_hotkey: std::sync::Mutex::new(s.search_hotkey.clone()),
         sound_enabled: AtomicBool::new(s.sound_enabled),
         hide_tray_icon: AtomicBool::new(s.hide_tray_icon),
+        lightweight_mode: AtomicBool::new(s.lightweight_mode),
         edge_docking: AtomicBool::new(s.edge_docking),
         follow_mouse: AtomicBool::new(s.follow_mouse),
         follow_caret: AtomicBool::new(s.follow_caret),
@@ -295,8 +302,10 @@ fn setup_main_window(app: &App, s: &StartupSettings) {
     
     if let Some(window) = app.get_webview_window("main") {
         if let (Some(w), Some(h)) = (s.window_width, s.window_height) {
-            if w >= 360 && h >= 240 {
-                let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize { width: w, height: h }));
+            if w >= 200 && h >= 200 {
+                // Stored size is in logical pixels (see persist_window_size); apply as
+                // Size::Logical so a scaled display doesn't misread it as physical.
+                let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width: w as f64, height: h as f64 }));
             }
         }
         let _ = window.set_always_on_top(effective_pinned);
@@ -697,13 +706,16 @@ fn init_announcement_ping(app: &App, repo: &impl SettingsRepository) {
     }
 }
 
-fn setup_tray(app: &App, hide_tray: bool) {
-    use tauri::menu::{Menu, MenuItem};
+fn setup_tray(app: &App, hide_tray: bool, lightweight: bool) {
+    use tauri::menu::{CheckMenuItem, Menu, MenuItem};
     use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 
     let show_i = MenuItem::with_id(app, "show", "显示主界面", true, None::<&str>).unwrap();
+    let lightweight_i = CheckMenuItem::with_id(app, "lightweight", "轻量模式（仅记录）", true, lightweight, None::<&str>).unwrap();
     let quit_i = MenuItem::with_id(app, "quit", "退出 winpaste", true, None::<&str>).unwrap();
-    let menu = Menu::with_items(app, &[&show_i, &quit_i]).unwrap();
+    let menu = Menu::with_items(app, &[&show_i, &lightweight_i, &quit_i]).unwrap();
+
+    let _ = LIGHTWEIGHT_CHECK_ITEM.set(Mutex::new(Some(lightweight_i.clone())));
     // Tray icon: extracted from the rounded-corner icon.ico (tray.png is
     // transparent at the corners), so the tray shows the rounded design
     // instead of the square winpaste.png.
@@ -716,17 +728,38 @@ fn setup_tray(app: &App, hide_tray: bool) {
         .menu(&menu)
         .on_menu_event(|app, event| {
             if event.id.as_ref() == "show" {
-                if let Some(window) = app.get_webview_window("main") {
+                // 轻量模式 = 仅记录，面板不可用；需先关闭轻量模式
+                if crate::app::window_manager::is_lightweight(app) {
+                    // no-op
+                } else if let Some(window) = crate::app::window_manager::ensure_main_window(app) {
                     let _ = window.show();
                     let _ = app.emit("window-shown", ());
                 }
-            } else if event.id.as_ref() == "quit" { app.exit(0); }
+            } else if event.id.as_ref() == "lightweight" {
+                let current = app.state::<crate::app_state::SettingsState>().lightweight_mode.load(Ordering::Relaxed);
+                let next = !current;
+                let _ = crate::app::window_manager::apply_lightweight_mode(app, next);
+                if let Some(cell) = LIGHTWEIGHT_CHECK_ITEM.get() {
+                    if let Ok(guard) = cell.lock() {
+                        if let Some(item) = guard.as_ref() {
+                            let _ = item.set_checked(next);
+                        }
+                    }
+                }
+            } else if event.id.as_ref() == "quit" {
+                crate::global_state::EXIT_REQUESTED.store(true, Ordering::Relaxed);
+                app.exit(0);
+            }
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click { button: MouseButton::Left, .. } = event {
-                if let Some(window) = tray.app_handle().get_webview_window("main") {
+                let handle = tray.app_handle();
+                // 轻量模式 = 仅记录，面板不可用；需先关闭轻量模式
+                if crate::app::window_manager::is_lightweight(handle) {
+                    // no-op
+                } else if let Some(window) = crate::app::window_manager::ensure_main_window(handle) {
                     let _ = window.show();
-                    let _ = tray.app_handle().emit("window-shown", ());
+                    let _ = handle.emit("window-shown", ());
                     let _ = window.set_focus();
                     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
                     LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
@@ -782,9 +815,7 @@ fn setup_taskbar_listener(app: &App) {
         if msg != 0 {
             TASKBAR_CREATED_MSG.store(msg, Ordering::Relaxed);
             if let Some(window) = app.get_webview_window("main") {
-                if let Ok(hwnd) = window.hwnd() {
-                    let _ = SetWindowSubclass(HWND(hwnd.0), Some(tray_subclass_proc), 1337, 0);
-                }
+                crate::app::system::subclass_window_for_taskbar(&window);
             }
         }
     }
@@ -826,18 +857,21 @@ pub fn handle_global_shortcut(app: &AppHandle, shortcut: &tauri_plugin_global_sh
         normalize_shortcut_string(&val).parse::<Shortcut>()
     } {
         if shortcut == &seq_s {
-            let is_seq = settings.sequential_mode.load(Ordering::Relaxed);
-            let has_items = {
-                let q_notification = app.state::<PasteQueue>().inner().0.lock().unwrap();
-                !q_notification.items.is_empty()
-            };
-            if is_seq || has_items {
-                tauri::async_runtime::spawn({
-                    let app = app.clone();
-                    async move {
-                        crate::services::paste_queue::paste_next_step(app).await;
-                    }
-                });
+            // 轻量模式 = 仅记录，不执行顺序粘贴
+            if !crate::app::window_manager::is_lightweight(app) {
+                let is_seq = settings.sequential_mode.load(Ordering::Relaxed);
+                let has_items = {
+                    let q_notification = app.state::<PasteQueue>().inner().0.lock().unwrap();
+                    !q_notification.items.is_empty()
+                };
+                if is_seq || has_items {
+                    tauri::async_runtime::spawn({
+                        let app = app.clone();
+                        async move {
+                            crate::services::paste_queue::paste_next_step(app).await;
+                        }
+                    });
+                }
             }
         }
     }
@@ -846,7 +880,12 @@ pub fn handle_global_shortcut(app: &AppHandle, shortcut: &tauri_plugin_global_sh
         let val = settings.rich_paste_hotkey.lock().unwrap().clone();
         normalize_shortcut_string(&val).parse::<Shortcut>()
     } {
-        if shortcut == &rich_s { crate::services::clipboard_ops::paste_latest_rich(app.clone()); }
+        if shortcut == &rich_s {
+            // 轻量模式 = 仅记录，不执行富文本粘贴
+            if !crate::app::window_manager::is_lightweight(app) {
+                crate::services::clipboard_ops::paste_latest_rich(app.clone());
+            }
+        }
     }
 
     if let Ok(search_s) = {
@@ -913,10 +952,21 @@ fn persist_window_size(window: &tauri::Window, width: u32, height: u32) {
         return;
     }
 
+    // Persist the size in *logical* pixels so both restore paths agree on units:
+    // setup_main_window applies Size::Logical, and rebuild_main_window applies
+    // inner_size() — both of which expect logical pixels. `Resized` reports the
+    // size in physical pixels, so divide by the window scale factor (e.g. 1.25/1.5
+    // on scaled displays). Otherwise the saved width is misread on scaled screens,
+    // which (a) resets the panel to the default width after a restart and
+    // (b) makes the panel grow every time the window is rebuilt in lightweight mode.
+    let scale = window.scale_factor().unwrap_or(1.0).max(0.1);
+    let logical_width = (width as f64 / scale).round() as u32;
+    let logical_height = (height as f64 / scale).round() as u32;
+
     let store = LAST_WINDOW_SIZE.get_or_init(|| Mutex::new((0, 0)));
     {
         let mut guard = store.lock().unwrap();
-        *guard = (width, height);
+        *guard = (logical_width, logical_height);
     }
 
     let now = std::time::SystemTime::now()
@@ -988,11 +1038,7 @@ fn handle_blur(window: &tauri::Window) {
         };
         if !down && matches!(w.is_focused(), Ok(false)) {
             if !IGNORE_BLUR.load(Ordering::Relaxed) && !WINDOW_PINNED.load(Ordering::Relaxed) {
-                let _ = w.hide();
-                let _ = w.app_handle().emit("window-hidden", ());
-                NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
-                release_win_keys();
-                let _ = restore_last_focus(w.app_handle().clone());
+                crate::app::window_manager::hide_main_window_or_destroy(&w.app_handle(), true);
             }
         }
     });

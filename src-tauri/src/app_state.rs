@@ -21,6 +21,7 @@ pub struct SettingsState {
     pub search_hotkey: Mutex<String>,
     pub sound_enabled: AtomicBool,
     pub hide_tray_icon: AtomicBool,
+    pub lightweight_mode: AtomicBool,
     pub edge_docking: AtomicBool,
     pub follow_mouse: AtomicBool,
     pub follow_caret: AtomicBool,

@@ -187,6 +187,66 @@ body:not(.dark-mode) .scroll-top-button:hover {
   display: none !important;
 }
 
+/* Overlay 滚动条（不占布局空间，OverlayScrollbars 风格） */
+.overlay-scrollbar-track {
+  position: absolute;
+  top: 6px;
+  right: 2px;
+  bottom: 64px; /* 底部避开「回到顶部」按钮 */
+  width: 12px;
+  z-index: 60;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  /* 始终可交互：pointer-events 的动态切换会让元素「出现在鼠标下方」时不触发
+     mouseenter，却让下层 scroller 触发 mouseleave，导致 hover 时滚动条反而消失 */
+  pointer-events: auto;
+}
+
+.overlay-scrollbar-track.visible {
+  opacity: 1;
+}
+
+/* 内容不足一屏（不可滚动）时彻底禁用，避免拦截右侧空白区域的点击 */
+.overlay-scrollbar-track.disabled {
+  pointer-events: none;
+}
+
+.overlay-scrollbar-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.overlay-scrollbar-thumb-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  transition: background 0.15s ease, width 0.15s ease, left 0.15s ease;
+}
+
+.overlay-scrollbar-thumb:hover .overlay-scrollbar-thumb-bar,
+.overlay-scrollbar-track.dragging .overlay-scrollbar-thumb-bar {
+  background: rgba(255, 255, 255, 0.34);
+  width: 6px;
+  left: 3px;
+}
+
+body:not(.dark-mode) .overlay-scrollbar-thumb-bar {
+  background: rgba(0, 0, 0, 0.22);
+}
+
+body:not(.dark-mode) .overlay-scrollbar-thumb:hover .overlay-scrollbar-thumb-bar,
+body:not(.dark-mode) .overlay-scrollbar-track.dragging .overlay-scrollbar-thumb-bar {
+  background: rgba(0, 0, 0, 0.4);
+}
+
 .history-item {
   position: relative;
   padding: 10px 12px 8px 12px;

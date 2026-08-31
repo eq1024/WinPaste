@@ -11,6 +11,7 @@ export const useSettingsInit = () => {
     setLanguage,
     setColorMode,
     setStickyEnabled,
+    setAppSettings,
     setSettingsLoadError
   } = useSettingsStore();
 
@@ -29,6 +30,7 @@ export const useSettingsInit = () => {
         if (disposed) return;
         setSettingsLoadError(null);
         setSettings(res);
+        setAppSettings(res);
 
         if (res["app.hotkey"]) setHotkey(res["app.hotkey"]);
         if (res["app.compact_mode"]) {

@@ -110,8 +110,17 @@ fn get_app_path_for_content_type(
 
 async fn handle_url_content(app_path: &Option<String>, content: &str) -> Result<(), AppError> {
     if let Some(app) = app_path {
-        if std::path::Path::new(app).exists() {
-            Command::new(app)
+        // Resolve bare app identifiers (AUMIDs such as "Microsoft.VisualStudioCode",
+        // stored when picked from Get-StartApps) to a real executable path.
+        let resolved = if std::path::Path::new(app).exists() {
+            Some(app.clone())
+        } else {
+            crate::infrastructure::windows_api::apps::resolve_appid_to_exe(app)
+        };
+        let app_ref = resolved.as_deref().unwrap_or(app.as_str());
+
+        if std::path::Path::new(app_ref).exists() {
+            Command::new(app_ref)
                 .arg(content)
                 .spawn()
                 .map_err(|e| AppError::Internal(format!("启动程序失败: {}", e)))?;
@@ -119,14 +128,14 @@ async fn handle_url_content(app_path: &Option<String>, content: &str) -> Result<
         } else {
             // Check for macOS-style paths on Windows to avoid invalid Start-Process calls
             #[cfg(target_os = "windows")]
-            if app.starts_with("/Applications/") || app.contains(".app") {
+            if app_ref.starts_with("/Applications/") || app_ref.contains(".app") {
                 return launch_default_handler(content).await;
             }
 
-            crate::info!("Attempting to launch URL handler: {}", app);
+            crate::info!("Attempting to launch URL handler: {}", app_ref);
             let ps_script = format!(
                 "Start-Process -FilePath 'shell:AppsFolder\\{}' -ArgumentList '{}'",
-                app,
+                app_ref,
                 content.replace("'", "''")
             );
 
@@ -234,8 +243,17 @@ async fn launch_file_with_app(
     use_direct_path: bool,
 ) -> Result<(), AppError> {
     if let Some(app) = app_path {
-        if std::path::Path::new(app).exists() {
-            Command::new(app)
+        // Resolve bare app identifiers (AUMIDs such as "Microsoft.VisualStudioCode",
+        // stored when picked from Get-StartApps) to a real executable path.
+        let resolved = if std::path::Path::new(app).exists() {
+            Some(app.clone())
+        } else {
+            crate::infrastructure::windows_api::apps::resolve_appid_to_exe(app)
+        };
+        let app_ref = resolved.as_deref().unwrap_or(app.as_str());
+
+        if std::path::Path::new(app_ref).exists() {
+            Command::new(app_ref)
                 .arg(temp_path)
                 .spawn()
                 .map_err(|e| format!("启动程序失败: {}", e))?;
@@ -243,17 +261,17 @@ async fn launch_file_with_app(
         } else {
             // Check for macOS-style paths on Windows to avoid invalid WinRT/Start-Process calls
             #[cfg(target_os = "windows")]
-            if app.starts_with("/Applications/") || app.contains(".app") {
+            if app_ref.starts_with("/Applications/") || app_ref.contains(".app") {
                 return launch_with_default_app(path_str, content_type, use_direct_path);
             }
 
-            crate::info!("Attempting to launch UWP app: {} for file: {}", app, path_str);
-            if let Err(e) = launch_uwp_with_file(app, path_str).await {
+            crate::info!("Attempting to launch UWP app: {} for file: {}", app_ref, path_str);
+            if let Err(e) = launch_uwp_with_file(app_ref, path_str).await {
                 crate::info!("WinRT launch failed: {}, falling back to old method", e);
                 let safe_path = path_str.replace("'", "''");
                 let ps_script = format!(
                     "Start-Process -FilePath 'shell:AppsFolder\\{}' -ArgumentList '{}'",
-                    app, safe_path
+                    app_ref, safe_path
                 );
                 #[cfg(target_os = "windows")]
                 {

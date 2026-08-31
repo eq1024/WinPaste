@@ -129,6 +129,7 @@ const App = () => {
     setDataPath,
     setInstalledApps,
     setDefaultApps,
+    setAppSettings,
     setWinClipboardDisabled,
     settingsLoaded,
     settingsLoadError,
@@ -207,7 +208,7 @@ const App = () => {
     search,
     showSettings,
     showTagManager: effectiveShowTagManager,
-    appSettings: settingsState as any
+    appSettings: settingsState.appSettings
   });
 
   const showScrollTopVisible = showScrollTop && scrollTopButtonEnabled;
@@ -477,10 +478,13 @@ const App = () => {
 
     try {
       await invoke("save_setting", { key, value: path });
+      // Keep the raw settings snapshot in sync so panels that read app.* keys
+      // (e.g. 默认打开程序) reflect the change immediately.
+      setAppSettings({ ...useSettingsStore.getState().appSettings, [key]: path });
     } catch (err) {
       console.error("保存设置失败", err);
     }
-  }, []);
+  }, [setAppSettings]);
 
   useSettingsSync({
     settingsLoaded,

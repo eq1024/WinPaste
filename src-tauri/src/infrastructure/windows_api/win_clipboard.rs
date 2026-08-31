@@ -8,6 +8,9 @@ use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalSize, Global
 const CF_DIB: u32 = 8; // DIB
 const CF_DIBV5: u32 = 17; // DIBV5
 const CF_UNICODETEXT: u32 = 13; // Unicode text
+const CF_TEXT: u32 = 1; // ANSI text (legacy fallback for text-only consumers)
+const CF_OEMTEXT: u32 = 7; // OEM code-page text (very old console/OEM targets)
+const CF_LOCALE: u32 = 16; // clipboard text locale (code page) info
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -498,6 +501,65 @@ pub unsafe fn set_clipboard_files(paths: Vec<String>) -> Result<(), String> {
                     let _ = SetClipboardData(id_a, Some(windows::Win32::Foundation::HANDLE(h_text.0 as _)));
                 }
             }
+        }
+    }
+
+    // ALSO set CF_UNICODETEXT and CF_TEXT so text-only targets (Notepad,
+    // address bar, terminals, etc.) can still paste the path list. This
+    // matches native Explorer copy behavior, where a file/folder copy
+    // carries BOTH the drop object (CF_HDROP) AND the text path list.
+    // Setting only CF_HDROP would drop the text formats (EmptyClipboard
+    // already cleared them), so pasting a file entry into a text-only
+    // target would yield nothing.
+    let joined = paths.join("\r\n");
+
+    // CF_UNICODETEXT (13) — UTF-16 path list (the main stream).
+    let mut wide: Vec<u16> = joined.encode_utf16().collect();
+    wide.push(0);
+    if let Ok(h_text) = GlobalAlloc(GHND, wide.len() * 2) {
+        let p_text = GlobalLock(h_text);
+        if !p_text.is_null() {
+            std::ptr::copy_nonoverlapping(wide.as_ptr() as *const u8, p_text as *mut u8, wide.len() * 2);
+            let _ = GlobalUnlock(h_text);
+            let _ = SetClipboardData(CF_UNICODETEXT, Some(windows::Win32::Foundation::HANDLE(h_text.0 as _)));
+        }
+    }
+
+    // CF_TEXT (1) — ANSI fallback for legacy text-only consumers.
+    let mut ansi: Vec<u8> = joined.as_bytes().to_vec();
+    ansi.push(0);
+    if let Ok(h_a) = GlobalAlloc(GHND, ansi.len()) {
+        let p_a = GlobalLock(h_a);
+        if !p_a.is_null() {
+            std::ptr::copy_nonoverlapping(ansi.as_ptr(), p_a as *mut u8, ansi.len());
+            let _ = GlobalUnlock(h_a);
+            let _ = SetClipboardData(CF_TEXT, Some(windows::Win32::Foundation::HANDLE(h_a.0 as _)));
+        }
+    }
+
+    // CF_OEMTEXT (7) — OEM code-page fallback for very old console/OEM
+    // text-only consumers that don't read CF_UNICODETEXT/CF_TEXT.
+    let mut oem: Vec<u8> = joined.as_bytes().to_vec();
+    oem.push(0);
+    if let Ok(h_o) = GlobalAlloc(GHND, oem.len()) {
+        let p_o = GlobalLock(h_o);
+        if !p_o.is_null() {
+            std::ptr::copy_nonoverlapping(oem.as_ptr(), p_o as *mut u8, oem.len());
+            let _ = GlobalUnlock(h_o);
+            let _ = SetClipboardData(CF_OEMTEXT, Some(windows::Win32::Foundation::HANDLE(h_o.0 as _)));
+        }
+    }
+
+    // CF_LOCALE (16) — declare the text's locale/code page so ANSI-oriented
+    // consumers (CF_TEXT / CF_OEMTEXT) convert the bytes correctly. Use the
+    // neutral locale (0) → consumers fall back to the system default code page.
+    let lcid: u32 = 0;
+    if let Ok(h_locale) = GlobalAlloc(GHND, 4) {
+        let p_locale = GlobalLock(h_locale);
+        if !p_locale.is_null() {
+            std::ptr::copy_nonoverlapping((&lcid as *const u32) as *const u8, p_locale as *mut u8, 4);
+            let _ = GlobalUnlock(h_locale);
+            let _ = SetClipboardData(CF_LOCALE, Some(windows::Win32::Foundation::HANDLE(h_locale.0 as _)));
         }
     }
 

@@ -1,7 +1,8 @@
-import React, { useRef, useImperativeHandle, useCallback, useMemo } from 'react';
+import React, { useRef, useImperativeHandle, useCallback, useMemo, useState } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import type { ClipboardEntry } from "../../../shared/types";
 import type { VirtualClipboardListHandle, VirtualClipboardListProps } from "../types";
+import { OverlayScrollbar } from "./OverlayScrollbar";
 
 type VirtuosoListContext = {
     header?: React.ReactNode;
@@ -46,6 +47,8 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
         } = props;
 
         const virtuosoRef = useRef<VirtuosoHandle>(null);
+        const [scrollerEl, setScrollerEl] = useState<HTMLElement | null>(null);
+        const scrollbarRefreshRef = useRef<(() => void) | null>(null);
         useImperativeHandle(ref, () => ({
             // 键盘导航的滚动统一由 useScrollToSelection 驱动。
             // 只有目标条目被虚拟列表回收（未挂载、距离较远）时才会走到这里：
@@ -113,6 +116,12 @@ const VirtualClipboardList = React.forwardRef<VirtualClipboardListHandle, Virtua
                     onScroll={(e) => handleScroll((e.currentTarget as HTMLElement).scrollTop)}
                     endReached={handleEndReached}
                     overscan={200} // Pre-render 200px of content for smoother scrolling
+                    scrollerRef={(ref) => setScrollerEl(ref instanceof HTMLElement ? ref : null)}
+                    totalListHeightChanged={() => scrollbarRefreshRef.current?.()}
+                />
+                <OverlayScrollbar
+                    scroller={scrollerEl}
+                    onRegisterRefresh={(fn) => { scrollbarRefreshRef.current = fn; }}
                 />
             </div>
         );

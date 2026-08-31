@@ -1,5 +1,7 @@
 use tauri::{AppHandle, Manager, State};
 use rusqlite::{params, Connection, OptionalExtension};
+use std::sync::atomic::Ordering;
+use crate::global_state::EXIT_REQUESTED;
 use serde_json;
 use crate::app_state::AppDataDir;
 use crate::error::{AppResult, AppError};
@@ -381,6 +383,7 @@ pub fn restart_explorer() -> AppResult<()> {
 
 #[tauri::command]
 pub fn quit(app: AppHandle) {
+    EXIT_REQUESTED.store(true, Ordering::Relaxed);
     app.exit(0);
 }
 
@@ -388,6 +391,7 @@ pub fn quit(app: AppHandle) {
 pub fn relaunch(app: AppHandle) {
     use std::process::Command;
     if let Ok(exe) = std::env::current_exe() { let _ = Command::new(exe).spawn(); }
+    EXIT_REQUESTED.store(true, Ordering::Relaxed);
     app.exit(0);
 }
 
@@ -435,6 +439,7 @@ pub fn restart_as_admin(app_handle: AppHandle) -> AppResult<()> {
     }
 
     // Close current instance
+    EXIT_REQUESTED.store(true, Ordering::Relaxed);
     app_handle.exit(0);
 
     Ok(())

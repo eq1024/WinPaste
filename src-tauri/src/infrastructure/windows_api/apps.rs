@@ -74,15 +74,41 @@ pub async fn scan_installed_apps() -> AppResult<Vec<AppInfo>> {
     let ps_script = r#"
         $ErrorActionPreference = 'SilentlyContinue'
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-        
+
+        # Build AUMID -> exe map from Start Menu shortcuts (for unpackaged Win32 apps)
+        $map = @{}
+        $sh = New-Object -ComObject WScript.Shell
+        $shell = New-Object -ComObject Shell.Application
+        $startDirs = @("$env:APPDATA\Microsoft\Windows\Start Menu\Programs", "$env:ProgramData\Microsoft\Windows\Start Menu\Programs")
+        foreach ($dir in $startDirs) {
+            if (-not (Test-Path $dir)) { continue }
+            Get-ChildItem $dir -Recurse -Filter '*.lnk' | ForEach-Object {
+                try {
+                    $ns = $shell.NameSpace((Split-Path $_.FullName))
+                    if (-not $ns) { return }
+                    $item = $ns.ParseName($_.Name)
+                    if (-not $item) { return }
+                    $aumid = $item.ExtendedProperty('System.AppUserModel.ID')
+                    if ($aumid -and -not $map.ContainsKey($aumid)) {
+                        $target = $sh.CreateShortcut($_.FullName).TargetPath
+                        if ($target -and (Test-Path $target)) { $map[$aumid] = $target }
+                    }
+                } catch {}
+            }
+        }
+
         $apps = Get-StartApps | Select-Object Name, AppID
         
         $results = New-Object System.Collections.Generic.List[Object]
         foreach ($app in $apps) {
-            if (![string]::IsNullOrEmpty($app.AppID)) {
-                $obj = @{ name = $app.Name; path = $app.AppID }
-                $results.Add($obj)
+            if ([string]::IsNullOrEmpty($app.AppID)) { continue }
+            $id = [string]$app.AppID
+            # Unpackaged apps carry a bare AUMID (no '!'); resolve it to the real exe
+            if ($id -notmatch '!') {
+                if ($map.ContainsKey($id)) { $id = $map[$id] }
             }
+            $obj = @{ name = $app.Name; path = $id }
+            $results.Add($obj)
         }
         
         if ($results.Count -eq 0) {
@@ -239,6 +265,113 @@ pub fn get_system_default_app(content_type: String) -> AppResult<String> {
     }
 
     Ok("系统默认".to_string())
+}
+
+static APPID_RESOLVE_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
+
+/// Resolve an unpackaged app identifier (a bare AUMID such as
+/// `Microsoft.VisualStudioCode` returned by Get-StartApps, or a bare
+/// `code.exe`) to its real executable path.
+///
+/// Returns `None` for UWP AppIDs (`...!App`), for empty input, or when the
+/// identifier cannot be resolved. Resolution tries, in order:
+///   1. Start Menu shortcuts whose AppUserModelID matches,
+///   2. `App Paths` registry entries,
+///   3. `Classes\Applications\<id>\shell\open\command` registry entries.
+pub fn resolve_appid_to_exe(app_id: &str) -> Option<String> {
+    let app_id = app_id.trim();
+    if app_id.is_empty() || app_id.contains('!') {
+        return None;
+    }
+    if Path::new(app_id).exists() {
+        return Some(app_id.to_string());
+    }
+
+    let cache = APPID_RESOLVE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let cache_key = app_id.to_ascii_lowercase();
+    if let Ok(guard) = cache.lock() {
+        if let Some(cached) = guard.get(&cache_key) {
+            return cached.clone();
+        }
+    }
+
+    let resolved = resolve_appid_to_exe_uncached(app_id);
+    if let Ok(mut guard) = cache.lock() {
+        guard.insert(cache_key, resolved.clone());
+    }
+    resolved
+}
+
+fn resolve_appid_to_exe_uncached(app_id: &str) -> Option<String> {
+    let ps_script = format!(
+        r#"
+$ErrorActionPreference = 'SilentlyContinue'
+$appid = '{0}'
+$found = $null
+
+# 1. Start menu shortcut with matching AppUserModelID
+$sh = New-Object -ComObject WScript.Shell
+$shell = New-Object -ComObject Shell.Application
+foreach ($dir in @("$env:APPDATA\Microsoft\Windows\Start Menu\Programs", "$env:ProgramData\Microsoft\Windows\Start Menu\Programs")) {{
+    if (-not (Test-Path $dir)) {{ continue }}
+    Get-ChildItem $dir -Recurse -Filter '*.lnk' | ForEach-Object {{
+        if ($found) {{ return }}
+        try {{
+            $ns = $shell.NameSpace((Split-Path $_.FullName))
+            $item = $ns.ParseName($_.Name)
+            $aumid = $null
+            if ($item) {{ $aumid = $item.ExtendedProperty('System.AppUserModel.ID') }}
+            if ($aumid -eq $appid) {{
+                $target = $sh.CreateShortcut($_.FullName).TargetPath
+                if ($target -and (Test-Path $target)) {{ $found = $target }}
+            }}
+        }} catch {{}}
+    }}
+    if ($found) {{ break }}
+}}
+if ($found) {{ Write-Output $found; exit 0 }}
+
+# 2. App Paths registry entries
+foreach ($root in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths', 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths')) {{
+    $p = Join-Path $root $appid
+    if (Test-Path $p) {{
+        $v = (Get-ItemProperty $p).'(default)'
+        if ($v -and (Test-Path $v)) {{ Write-Output $v; exit 0 }}
+    }}
+}}
+
+# 3. Classes\Applications\<id>\shell\open\command
+foreach ($root in @('HKLM:\SOFTWARE\Classes\Applications', 'HKCU:\SOFTWARE\Classes\Applications')) {{
+    $p = Join-Path $root ($appid + '\shell\open\command')
+    if (Test-Path $p) {{
+        $cmd = (Get-ItemProperty $p).'(default)'
+        if ($cmd) {{
+            $exe = $cmd -replace '^"([^"]+)".*', '$1'
+            if ($exe -and (Test-Path $exe)) {{ Write-Output $exe; exit 0 }}
+        }}
+    }}
+}}
+exit 1
+"#,
+        app_id.replace("'", "''")
+    );
+
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+        .creation_flags(0x08000000)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let trimmed = stdout.trim().to_string();
+    if !trimmed.is_empty() && Path::new(&trimmed).exists() {
+        Some(trimmed)
+    } else {
+        None
+    }
 }
 
 use std::os::windows::ffi::OsStrExt;

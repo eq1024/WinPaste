@@ -1,9 +1,13 @@
 use tauri::{AppHandle, Manager, Emitter};
 use std::sync::atomic::Ordering;
 use crate::app_state::SettingsState;
+use crate::database::DbState;
+use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use crate::global_state::*;
 #[cfg(target_os = "windows")]
 use crate::infrastructure::windows_ext::WindowExt;
+#[cfg(target_os = "windows")]
+use crate::app::system::subclass_window_for_taskbar;
 
 #[cfg(windows)]
 use windows::Win32::Foundation::{HWND, POINT};
@@ -69,25 +73,151 @@ fn remap_fixed_window_position(
     )
 }
 
-pub fn toggle_window(app: &AppHandle) {
+/// Ensure the `main` window exists, rebuilding it if it was released in lightweight mode.
+pub fn ensure_main_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     if let Some(window) = app.get_webview_window("main") {
+        return Some(window);
+    }
+    rebuild_main_window(app)
+}
+
+fn apply_noactivate_style(window: &tauri::WebviewWindow, pinned: bool) {
+    #[cfg(windows)]
+    if let Ok(hwnd) = window.hwnd() {
+        unsafe {
+            let ex_style = GetWindowLongPtrW(HWND(hwnd.0), GWL_EXSTYLE);
+            let next = if pinned {
+                ex_style | WS_EX_NOACTIVATE.0 as isize
+            } else {
+                ex_style & !(WS_EX_NOACTIVATE.0 as isize)
+            };
+            let _ = SetWindowLongPtrW(HWND(hwnd.0), GWL_EXSTYLE, next);
+        }
+    }
+}
+
+fn persisted_window_size(app: &AppHandle) -> (f64, f64) {
+    if let Some(db) = app.try_state::<DbState>() {
+        let w = db.settings_repo.get("app.window_width").ok().flatten().and_then(|v| v.parse::<u32>().ok());
+        let h = db.settings_repo.get("app.window_height").ok().flatten().and_then(|v| v.parse::<u32>().ok());
+        if let (Some(w), Some(h)) = (w, h) {
+            if w >= 200 && h >= 200 {
+                return (w as f64, h as f64);
+            }
+        }
+    }
+    (352.0, 380.0)
+}
+
+/// Rebuild the `main` window from its config, re-applying runtime state that is otherwise
+/// only set once at startup (pinned/focusable, persisted size, WS_EX_NOACTIVATE, taskbar subclass).
+pub fn rebuild_main_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
+    let config = app.config().app.windows.iter().find(|c| c.label == "main").cloned()?;
+    let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
+
+    let mut builder = tauri::WebviewWindowBuilder::from_config(app, &config).ok()?;
+    builder = builder
+        .visible(false)
+        .focused(false)
+        .always_on_top(pinned)
+        .focusable(!pinned);
+
+    // persisted_window_size returns LOGICAL pixels (see persist_window_size), and
+    // inner_size() expects logical pixels — this pair must stay consistent, otherwise
+    // the rebuilt panel grows by the scale factor on every lightweight-mode cycle.
+    let (w, h) = persisted_window_size(app);
+    builder = builder.inner_size(w, h);
+
+    let window = builder.build().ok()?;
+
+    apply_noactivate_style(&window, pinned);
+
+    #[cfg(windows)]
+    subclass_window_for_taskbar(&window);
+
+    Some(window)
+}
+
+/// Destroy the `main` window, releasing its webview and resetting navigation/focus state.
+pub fn destroy_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        #[cfg(target_os = "windows")]
+        WindowExt::release_win_keys();
+        let _ = window.destroy();
+    }
+    crate::IS_MAIN_WINDOW_FOCUSED.store(false, Ordering::Relaxed);
+    NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
+    NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
+    let _ = app.emit("window-hidden", ());
+}
+
+/// Hide the main window; in lightweight mode destroy it instead so the webview is released.
+pub fn hide_main_window_or_destroy(app: &AppHandle, restore_focus: bool) {
+    let lightweight = app.state::<SettingsState>().lightweight_mode.load(Ordering::Relaxed);
+    if lightweight {
+        destroy_main_window(app);
+        return;
+    }
+
+    if let Some(window) = app.get_webview_window("main") {
+        #[cfg(target_os = "windows")]
+        WindowExt::release_win_keys();
+        let _ = window.set_focusable(false);
+        crate::IS_MAIN_WINDOW_FOCUSED.store(false, Ordering::Relaxed);
+        let _ = window.hide();
+        NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
+        NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
+        if restore_focus {
+            let _ = restore_last_focus(app.clone());
+        }
+        let _ = app.emit("window-hidden", ());
+    }
+}
+
+/// Core lightweight-mode toggle shared by the tray handler and the Tauri command.
+pub fn apply_lightweight_mode(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    app.state::<SettingsState>().lightweight_mode.store(enabled, Ordering::Relaxed);
+    if let Some(db) = app.try_state::<DbState>() {
+        let _ = db.settings_repo.set("app.lightweight_mode", &enabled.to_string());
+    }
+    if enabled {
+        destroy_main_window(app);
+    } else {
+        ensure_main_window(app);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_lightweight_mode(app: AppHandle, enabled: bool) -> Result<(), String> {
+    apply_lightweight_mode(&app, enabled)
+}
+
+/// Whether lightweight (record-only) mode is active.
+pub fn is_lightweight(app: &AppHandle) -> bool {
+    app.try_state::<SettingsState>()
+        .map(|s| s.lightweight_mode.load(Ordering::Relaxed))
+        .unwrap_or(false)
+}
+
+pub fn toggle_window(app: &AppHandle) {
+    // 轻量模式 = 仅记录：面板不弹出，需到托盘关闭轻量模式后才能使用。
+    if is_lightweight(app) {
+        return;
+    }
+    let window = match ensure_main_window(app) {
+        Some(w) => w,
+        None => return,
+    };
+    {
         #[cfg(windows)]
         let mut active_center: Option<(i32, i32)> = None;
         let is_visible = window.is_visible().unwrap_or(false);
         let is_hidden_by_edge = IS_HIDDEN.load(Ordering::Relaxed);
 
         if is_visible && !is_hidden_by_edge {
-            #[cfg(target_os = "windows")]
-            WindowExt::release_win_keys();
-            let _ = window.set_focusable(false);
-            let _ = window.hide();
-            
-            let _ = restore_last_focus(app.clone());
-            
+            hide_main_window_or_destroy(app, true);
             IS_HIDDEN.store(false, Ordering::Relaxed);
-            NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
-            NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
-            let _ = app.emit("window-hidden", ());
             return;
         }
 
@@ -488,17 +618,7 @@ pub fn activate_window_focus(app_handle: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn hide_window_cmd(app_handle: AppHandle) -> Result<(), String> {
-    if let Some(window) = app_handle.get_webview_window("main") {
-        #[cfg(target_os = "windows")]
-        WindowExt::release_win_keys();
-        let _ = window.set_focusable(false);
-        crate::IS_MAIN_WINDOW_FOCUSED.store(false, std::sync::atomic::Ordering::Relaxed);
-        let _ = window.hide();
-        NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
-        NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
-        let _ = restore_last_focus(app_handle.clone());
-        let _ = app_handle.emit("window-hidden", ());
-    }
+    hide_main_window_or_destroy(&app_handle, true);
     Ok(())
 }
 
@@ -506,16 +626,7 @@ pub fn hide_window_cmd(app_handle: AppHandle) -> Result<(), String> {
 /// Used when the user clicks outside the panel — the click already transferred
 /// focus naturally, so calling restore_last_focus would cause a focus fight.
 pub fn hide_window_no_restore(app_handle: &AppHandle) {
-    if let Some(window) = app_handle.get_webview_window("main") {
-        #[cfg(target_os = "windows")]
-        WindowExt::release_win_keys();
-        let _ = window.set_focusable(false);
-        crate::IS_MAIN_WINDOW_FOCUSED.store(false, std::sync::atomic::Ordering::Relaxed);
-        let _ = window.hide();
-        NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
-        NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
-        let _ = app_handle.emit("window-hidden", ());
-    }
+    hide_main_window_or_destroy(app_handle, false);
 }
 
 #[tauri::command]

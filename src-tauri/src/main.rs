@@ -14,7 +14,7 @@ pub mod migration;
 use std::sync::atomic::{Ordering};
 use crate::global_state::*;
 use crate::app::setup;
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
 fn main() {
     let _ = dotenvy::dotenv();
@@ -30,18 +30,23 @@ fn main() {
                 setup::handle_global_shortcut(app, shortcut);
             }
         }).build())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_window_state::Builder::default()
+            .with_filter(|label| label != "main")
+            .build())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             // 已有实例运行时，第二次启动不再静默退出：
             // 唤起主窗口（与托盘"显示主界面"行为一致），
             // 修复"旧版本还在跑，双击新版图标没反应"的问题。
-            if let Some(window) = app.get_webview_window("main") {
-                let was_visible = window.is_visible().unwrap_or(false);
-                let _ = window.show();
-                if !was_visible {
-                    let _ = app.emit("window-shown", ());
+            // 轻量模式 = 仅记录，二次启动不唤起面板
+            if !crate::app::window_manager::is_lightweight(app) {
+                if let Some(window) = crate::app::window_manager::ensure_main_window(app) {
+                    let was_visible = window.is_visible().unwrap_or(false);
+                    let _ = window.show();
+                    if !was_visible {
+                        let _ = app.emit("window-shown", ());
+                    }
+                    let _ = window.set_focus();
                 }
-                let _ = window.set_focus();
             }
         }))
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
@@ -99,6 +104,7 @@ fn main() {
             app::commands::set_sound_enabled,
             app::commands::set_arrow_key_selection,
             app::commands::set_tray_visible,
+            app::window_manager::set_lightweight_mode,
             app::commands::set_edge_docking,
             app::commands::set_follow_mouse,
             app::commands::set_follow_caret,
@@ -173,7 +179,16 @@ fn main() {
     match app {
         Ok(app) => {
             info!(">>> [STARTUP] Tauri app built successfully.");
-            app.run(|_app_handle, _event| {});
+            app.run(|_app_handle, event| {
+                // 轻量模式 = 零窗口后台记录：当最后一个窗口被销毁（轻量模式关闭面板）时，
+                // 默认会触发 ExitRequested 导致整个应用退出。这里 intercept 掉，只有用户
+                // 通过托盘/命令显式 quit（EXIT_REQUESTED=true）时才真正退出。
+                if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                    if !EXIT_REQUESTED.load(Ordering::Relaxed) {
+                        api.prevent_exit();
+                    }
+                }
+            });
         },
         Err(e) => {
              error!(">>> [STARTUP] Failed to build tauri app: {}", e);

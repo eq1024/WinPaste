@@ -58,6 +58,8 @@ interface SettingsState {
   dataPath: string;
   installedApps: InstalledAppOption[];
   defaultApps: DefaultAppsMap;
+  // Raw key-value snapshot of app.* settings loaded from DB (e.g. app.text, app.image)
+  appSettings: Record<string, string>;
   winClipboardDisabled: boolean;
   registryWinVEnabled: boolean;
   settingsLoaded: boolean;
@@ -108,6 +110,7 @@ interface SettingsState {
   setDataPath: (path: string) => void;
   setInstalledApps: (apps: InstalledAppOption[]) => void;
   setDefaultApps: (apps: DefaultAppsMap | ((prev: DefaultAppsMap) => DefaultAppsMap)) => void;
+  setAppSettings: (settings: Record<string, string>) => void;
   setWinClipboardDisabled: (disabled: boolean) => void;
   setRegistryWinVEnabled: (enabled: boolean) => void;
   setSettingsLoaded: (loaded: boolean) => void;
@@ -160,6 +163,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   dataPath: "",
   installedApps: [],
   defaultApps: {},
+  appSettings: {},
   winClipboardDisabled: false,
   registryWinVEnabled: false,
   settingsLoaded: false,
@@ -211,6 +215,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setDefaultApps: (apps) => set((state) => ({ 
     defaultApps: typeof apps === 'function' ? apps(state.defaultApps) : apps 
   })),
+  setAppSettings: (appSettings) => set({ appSettings }),
   setWinClipboardDisabled: (winClipboardDisabled) => set({ winClipboardDisabled }),
   setRegistryWinVEnabled: (registryWinVEnabled) => set({ registryWinVEnabled }),
   setSettingsLoaded: (settingsLoaded) => set({ settingsLoaded }),

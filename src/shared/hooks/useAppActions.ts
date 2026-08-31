@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ConfirmOption } from "../types";
+import { useSettingsStore } from "../store/settingsStore";
 interface UseAppActionsProps {
   t: (key: string) => string;
   openConfirm: (opts: {
@@ -57,6 +58,15 @@ export const useAppActions = ({
       onConfirm: async () => {
         try {
           await invoke("reset_settings");
+          // Refresh the raw settings snapshot so panels reading app.* keys
+          // (e.g. 默认打开程序) don't show stale values if the relaunch
+          // below is blocked or fails while the process keeps running.
+          try {
+            const fresh = await invoke<Record<string, string>>("get_settings");
+            useSettingsStore.getState().setAppSettings(fresh);
+          } catch (refreshErr) {
+            console.error("Failed to refresh settings snapshot after reset:", refreshErr);
+          }
           closeConfirm();
           pushToast("Settings reset successfully");
           setTimeout(() => {

@@ -38,6 +38,10 @@ pub static TARGET_HOTKEY: std::sync::Mutex<Option<HookHotkey>> = std::sync::Mute
 pub static IS_RECORDING: AtomicBool = AtomicBool::new(false);
 pub static IGNORE_BLUR: AtomicBool = AtomicBool::new(false);
 pub static WINDOW_PINNED: AtomicBool = AtomicBool::new(false);
+/// Set right before an explicit `app.exit(0)` (tray quit / quit command) so the
+/// `ExitRequested` handler in `main.rs` lets the app actually quit instead of
+/// preventing exit for last-window-closed (which keeps lightweight record-only mode alive).
+pub static EXIT_REQUESTED: AtomicBool = AtomicBool::new(false);
 pub static CLIPBOARD_MONITOR_PAUSED: AtomicBool = AtomicBool::new(false);
 pub static LAST_ACTIVE_HWND: AtomicUsize = AtomicUsize::new(0);
 pub static LAST_APP_SET_HASH: AtomicU64 = AtomicU64::new(0);

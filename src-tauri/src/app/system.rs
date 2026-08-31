@@ -62,6 +62,18 @@ pub fn is_same_device_id(id1: &str, id2: &str) -> bool {
     n1.is_some() && n1 == n2
 }
 
+/// Apply the TaskbarCreated subclass to a window. Used both at startup and when
+/// the main window is rebuilt in lightweight mode (a fresh HWND needs re-subclassing).
+#[cfg(target_os = "windows")]
+pub fn subclass_window_for_taskbar(window: &tauri::WebviewWindow) {
+    use windows::Win32::UI::Shell::SetWindowSubclass;
+    if let Ok(hwnd) = window.hwnd() {
+        unsafe {
+            let _ = SetWindowSubclass(HWND(hwnd.0), Some(tray_subclass_proc), 1337, 0);
+        }
+    }
+}
+
 /// Window subclass procedure to handle taskbar recreation (explorer restart)
 #[cfg(target_os = "windows")]
 pub unsafe extern "system" fn tray_subclass_proc(
