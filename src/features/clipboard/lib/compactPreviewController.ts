@@ -243,6 +243,24 @@ class CompactPreviewController {
         await this.listenersReady;
     }
 
+    private async armDestroyedReset(previewWindow: WebviewWindow) {
+        // The backend may destroy this window out from under the controller
+        // (e.g. lightweight-mode teardown destroys transient webviews to
+        // release WebView2). Drop the cached handle so the next show()
+        // recreates the preview instead of emitting into a dead window.
+        try {
+            await previewWindow.once("tauri://destroyed", () => {
+                if (this.window === previewWindow) {
+                    this.window = null;
+                    this.mounted = false;
+                    this.mountedPromise = null;
+                }
+            });
+        } catch {
+            // Listener registration can fail if the backend already closed it.
+        }
+    }
+
     private async tryReuseExistingWindow(): Promise<WebviewWindow | null> {
         try {
             const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
@@ -253,6 +271,7 @@ class CompactPreviewController {
             this.mountedPromise = Promise.resolve(true);
             try { await existing.setIgnoreCursorEvents(true); } catch {}
             try { await existing.setAlwaysOnTop(true); } catch {}
+            await this.armDestroyedReset(existing);
             return existing;
         } catch {
             return null;
@@ -320,6 +339,7 @@ class CompactPreviewController {
                 try { await previewWindow.setSize(new PhysicalSize(1, 1)); } catch {}
                 try { await previewWindow.setIgnoreCursorEvents(true); } catch {}
                 try { await previewWindow.setAlwaysOnTop(true); } catch {}
+                await this.armDestroyedReset(previewWindow);
                 return previewWindow;
             } catch {
                 this.window = null;

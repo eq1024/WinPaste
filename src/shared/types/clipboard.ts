@@ -5,6 +5,9 @@ export interface ClipboardEntry {
   html_content?: string;
   source_app: string;
   source_app_path?: string;
+  /** Original local file path when the entry was copied from a file on disk.
+   *  Screenshots/base64 images have no local address → not searchable. */
+  source_file_path?: string;
   timestamp: number;
   preview: string;
   is_pinned: boolean;

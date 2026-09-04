@@ -138,13 +138,33 @@ pub fn rebuild_main_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     Some(window)
 }
 
+/// Destroy transient panel-UI webview windows (currently only `compact-preview`).
+/// The compact preview is an independent WebviewWindow that, once created, is
+/// only ever hidden — never destroyed — so it survives `main` and keeps a
+/// WebView2 renderer process alive (this is the residual "WebView2: WinPaste"
+/// process seen after enabling lightweight mode following a search).
+///
+/// Sticky notes (`sticky-*`) are intentionally NOT touched: they are user
+/// content pinned to the desktop and must survive lightweight mode.
+fn destroy_transient_windows(app: &AppHandle) {
+    for (label, window) in app.webview_windows() {
+        if label == "compact-preview" {
+            crate::info!("[lightweight] destroying residual window: {}", label);
+            let _ = window.destroy();
+        }
+    }
+}
+
 /// Destroy the `main` window, releasing its webview and resetting navigation/focus state.
+/// Only called on lightweight-mode entry paths (tray toggle / command / startup),
+/// so transient panel webviews (compact-preview) are torn down here as well.
 pub fn destroy_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(target_os = "windows")]
         WindowExt::release_win_keys();
         let _ = window.destroy();
     }
+    destroy_transient_windows(app);
     crate::IS_MAIN_WINDOW_FOCUSED.store(false, Ordering::Relaxed);
     NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
     NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
@@ -689,8 +709,11 @@ pub fn is_main_window_focused() -> bool {
 mod tests {
     use super::{remap_fixed_window_position, MonitorBounds};
 
+    // The remap is proportional, not corner-anchored: a window sitting 10px off
+    // the bottom-right keeps a scaled 10px-ish margin on the new monitor rather
+    // than snapping flush into the corner.
     #[test]
-    fn keeps_bottom_right_anchor_when_switching_monitors() {
+    fn keeps_relative_position_near_bottom_right_corner() {
         let source = MonitorBounds {
             x: 0,
             y: 0,
@@ -711,7 +734,9 @@ mod tests {
             target,
         );
 
-        assert_eq!(mapped, (4180, 1040));
+        // ratio = 1610/1620 ≈ 0.9938, 670/680 ≈ 0.9853 (near bottom-right, not
+        // exactly at the edge) applied to target spans 2260x1040.
+        assert_eq!(mapped, (4166, 1025));
     }
 
     #[test]
@@ -736,7 +761,8 @@ mod tests {
             target,
         );
 
-        assert_eq!(mapped, (-800, 250));
+        // ratio 0.5 applied to target spans 1300x500 → (-1600+650, 250).
+        assert_eq!(mapped, (-950, 250));
     }
 
     #[test]

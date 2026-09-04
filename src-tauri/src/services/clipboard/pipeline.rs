@@ -86,21 +86,22 @@ impl ClipboardPipeline {
 pub struct DiscoveryStage;
 impl PipelineStage for DiscoveryStage {
     fn process(&self, ctx: &mut PipelineContext) {
-        let (content_type, content, html_content) = match &ctx.data {
-            ClipboardData::Text(t) => (detect_content_type(t), t.clone(), None),
+        let (content_type, content, html_content, source_file_path) = match &ctx.data {
+            ClipboardData::Text(t) => (detect_content_type(t), t.clone(), None, None),
             ClipboardData::RichText { text, html } => (
                 "rich_text".to_string(),
                 derive_rich_text_content(text, Some(html)),
                 Some(html.clone()),
+                None,
             ),
-            ClipboardData::Image { data_url } => ("image".to_string(), data_url.clone(), None),
+            ClipboardData::Image { data_url } => ("image".to_string(), data_url.clone(), None, None),
             ClipboardData::Files(f) => {
                 let content = f.join("\n");
                 if f.len() == 1 {
                     let path = &f[0];
                     let lower = path.to_lowercase();
                     if lower.ends_with(".gif") {
-                         ("image".to_string(), path.clone(), None)
+                         ("image".to_string(), path.clone(), None, Some(path.clone()))
                     // .avif intentionally excluded: image crate has no AVIF
                     // decoder, so embedded AVIF could never be pasted. It stays
                     // a plain file (CF_HDROP).
@@ -108,7 +109,7 @@ impl PipelineStage for DiscoveryStage {
                         if let Ok(metadata) = std::fs::metadata(path) {
                             // If file size > 1MB (1024 * 1024 bytes), just save path
                             if metadata.len() > 1024 * 1024 {
-                                ("image".to_string(), path.clone(), None)
+                                ("image".to_string(), path.clone(), None, Some(path.clone()))
                             } else if let Ok(img_data) = std::fs::read(path) {
                                 // Embed the original bytes directly — no decode /
                                 // re-encode needed. <img> renders any image MIME
@@ -137,20 +138,20 @@ impl PipelineStage for DiscoveryStage {
                                 };
                                 if lower.ends_with(".svg") || image::guess_format(&img_data).is_ok() {
                                     let b64 = base64::engine::general_purpose::STANDARD.encode(img_data);
-                                    ("image".to_string(), format!("data:{};base64,{}", mime, b64), None)
+                                    ("image".to_string(), format!("data:{};base64,{}", mime, b64), None, Some(path.clone()))
                                 } else {
                                     // Not a real image (renamed/corrupted file) —
                                     // keep the path so pasting still works via
                                     // CF_HDROP instead of failing to decode.
-                                    ("image".to_string(), path.clone(), None)
+                                    ("image".to_string(), path.clone(), None, Some(path.clone()))
                                 }
-                            } else { ("image".to_string(), path.clone(), None) }
-                        } else { ("image".to_string(), path.clone(), None) }
+                            } else { ("image".to_string(), path.clone(), None, Some(path.clone())) }
+                        } else { ("image".to_string(), path.clone(), None, Some(path.clone())) }
                     } else if lower.ends_with(".mp4") || lower.ends_with(".mkv") || lower.ends_with(".avi") || lower.ends_with(".mov") || lower.ends_with(".wmv") || lower.ends_with(".flv") || lower.ends_with(".webm") {
-                        ("video".to_string(), path.clone(), None)
-                    } else { ("file".to_string(), content, None) }
+                        ("video".to_string(), path.clone(), None, Some(path.clone()))
+                    } else { ("file".to_string(), content, None, None) }
                 } else {
-                    ("file".to_string(), content, None)
+                    ("file".to_string(), content, None, None)
                 }
             }
         };
@@ -179,6 +180,7 @@ impl PipelineStage for DiscoveryStage {
             html_content,
             source_app: ctx.source_app.clone(),
             source_app_path: ctx.source_app_path.clone(),
+            source_file_path,
             timestamp: ctx.timestamp,
             preview,
             is_pinned: false,
@@ -385,6 +387,7 @@ impl PipelineStage for PersistenceStage {
                         existing.html_content = entry.html_content.clone();
                         existing.source_app = entry.source_app.clone();
                         existing.source_app_path = entry.source_app_path.clone();
+                        existing.source_file_path = entry.source_file_path.clone();
                         existing.timestamp = entry.timestamp;
                         existing.preview = entry.preview.clone();
                         existing.is_external = entry.is_external;

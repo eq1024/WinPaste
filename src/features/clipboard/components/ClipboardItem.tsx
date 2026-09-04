@@ -35,6 +35,7 @@ import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
 import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot";
 import { getFileIcon as getFileIconDataUrl, peekFileIcon } from "../../../shared/lib/fileIcon";
 import { getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
+import { peekRecentThumb } from "../../../shared/lib/thumbnailCache";
 import { useSettingsStore } from "../../../shared/store/settingsStore";
 import { useHistoryStore } from "../../../shared/store/historyStore";
 import { useUIStore } from "../../../shared/store/uiStore";
@@ -206,9 +207,22 @@ const ClipboardItem = ({
     const showCompactPreview = async (anchor: CompactPreviewAnchor) => {
         if (item.is_external && item.file_preview_exists === false) return;
         try {
+            let content = item.content;
+            if (item.content_type === "image") {
+                // Large images are resized server-side (and cached per session):
+                // shipping a multi-MB base64 over IPC — twice, invoke + preview
+                // event — and decoding the full-size image in the preview webview
+                // is what made hover on big screenshots feel slow. Small content
+                // passes through unchanged (keeps GIF animation). Any failure
+                // falls back to the original src.
+                const previewSrc = await invoke<string>("get_hover_preview_image", { id: item.id }).catch(() => "");
+                content = previewSrc || item.content || await invoke<string>("get_clipboard_content", { id: item.id }).catch(() => "");
+            } else if (!content) {
+                content = await invoke<string>("get_clipboard_content", { id: item.id }).catch(() => "");
+            }
             await compactPreviewController.show(anchor, {
                 contentType: item.content_type,
-                content: item.content,
+                content,
                 preview: item.preview,
                 htmlContent: item.html_content,
                 sourceApp: item.source_app,
@@ -306,6 +320,31 @@ const ClipboardItem = ({
         return <div className="file-thumbnail-card" title={item.content}><div className={`file-icon-wrapper ${fileIcon ? 'file-icon-wrapper-system' : ''}`}>{fileIcon ? <img src={fileIcon} alt="" className="file-icon-image" /> : getFallbackFileIcon(filePath)}</div><div className="file-info-wrapper"><div className="file-name">{filePath.split(/[\\/]/).pop()}</div><div className="file-hint">{filePath.split(/[\\/]/).slice(0, -1).join('\\')}</div></div></div>;
     };
 
+    // List payloads carry only thumbnails for base64 images (full content is
+    // fetched on demand); external images keep their file path as src. The
+    // thumbnail may still be in flight (background generation) — check the
+    // recent-thumb cache for late arrivals.
+    const listImageSrc = item.content
+        ? (item.content.startsWith("data:") ? item.content : (toTauriLocalImageSrc(item.content) || convertFileSrc(item.content)))
+        : (item.preview?.startsWith("data:") ? item.preview : (peekRecentThumb(item.id) ?? ""));
+
+    // A base64 image whose thumbnail has not streamed in yet has no src to
+    // render. Rendering <img src=""> would fire onError, which sets
+    // style.display='none'; React never clears that inline style (the style
+    // prop stays `{}`), so the tile would stay invisible even after the real
+    // thumbnail lands. Show a placeholder while pending, and clear any earlier
+    // error state on a successful load.
+    const imageTilePending = !listImageSrc;
+
+    const resetImageErrorState = (el: HTMLImageElement) => {
+        el.style.display = '';
+        el.parentElement?.classList.remove('image-load-error');
+    };
+
+    // The list empties `content` for base64 images, so fall back to the
+    // recorded local path when naming a deleted external image.
+    const deletedImageName = (item.content || item.source_file_path || "").split(/[\\/]/).pop() ?? "";
+
     return (
         <motion.div ref={itemRef} id={id} layout={!disableLayout} initial={false} animate={{ marginBottom: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ duration: 0.1 }}
             className={`history-item ${isSelected ? "selected" : ""} ${compactMode ? "compact" : ""} ${item.is_pinned ? "pinned" : ""} ${item.content_type === 'file' ? 'file-item' : ''}`}
@@ -359,7 +398,7 @@ const ClipboardItem = ({
             <div className={`content-preview ${item.content_type === 'rich_text' ? 'rich-text' : ''} ${item.content_type === 'file' ? 'file-preview' : ''} ${isSensitiveHidden ? 'sensitive-blur' : ''}`}>
                 {item.content_type === "image" ? (
                     <div style={{ position: 'relative' }}>
-                        {item.is_external && item.file_preview_exists === false ? <div className="image-preview error-placeholder" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', height: '100px', fontSize: '12px' }}><ImageOff size={24} style={{ marginBottom: '8px', opacity: 0.5 }} /><span style={{ marginBottom: '8px' }}>{t('image_deleted')}</span><span style={{ fontSize: '10px', opacity: 0.7, maxWidth: '80%', wordBreak: 'break-all', textAlign: 'center' }}>{item.content.split(/[\\/]/).pop()}</span></div> : <img src={item.content.startsWith("data:") ? item.content : (toTauriLocalImageSrc(item.content) || convertFileSrc(item.content))} alt={t('image_preview')} className="image-preview" style={isSensitiveHidden ? { filter: 'blur(8px)' } : {}} onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement?.classList.add('image-load-error'); }} />}
+                        {item.is_external && item.file_preview_exists === false ? <div className="image-preview error-placeholder" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', height: '100px', fontSize: '12px' }}><ImageOff size={24} style={{ marginBottom: '8px', opacity: 0.5 }} /><span style={{ marginBottom: '8px' }}>{t('image_deleted')}</span><span style={{ fontSize: '10px', opacity: 0.7, maxWidth: '80%', wordBreak: 'break-all', textAlign: 'center' }}>{deletedImageName}</span></div> : imageTilePending ? <div className="image-preview-pending" /> : <img src={listImageSrc} alt={t('image_preview')} className="image-preview" style={isSensitiveHidden ? { filter: 'blur(8px)' } : {}} onLoad={(e) => resetImageErrorState(e.currentTarget)} onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.parentElement?.classList.add('image-load-error'); }} />}
                         {isSensitiveHidden && <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontWeight: 'bold', opacity: 0.5, fontSize: '10px' }}>SENSITIVE</div>}
                     </div>
                 ) : item.content_type === "video" ? (

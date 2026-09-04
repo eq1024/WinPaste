@@ -41,6 +41,7 @@ import { useScrollToSelection } from "./shared/hooks/useScrollToSelection";
 import { useClipboardItemRenderer } from "./shared/hooks/useClipboardItemRenderer";
 import { useOverlays } from "./shared/hooks/useOverlays";
 import { compactPreviewController } from "./features/clipboard/lib/compactPreviewController";
+import { storeRecentThumb } from "./shared/lib/thumbnailCache";
 import type { ClipboardEntry } from "./shared/types";
 import type { VirtualClipboardListHandle } from "./features/clipboard/types";
 
@@ -414,6 +415,41 @@ const App = () => {
       fetchHistory(true);
     }
   });
+
+  // List payloads only carry thumbnails for base64 images; the backend
+  // generates them in the background and streams them via this event. Patch
+  // the store so visible items re-render, and keep a bounded cache for items
+  // that are inserted into the list after the event has fired.
+  //
+  // Thumbnails arrive one event per image, so a page of 200 images would
+  // otherwise trigger 200 full-list re-renders. Coalesce them into a single
+  // patch per animation frame instead.
+  useEffect(() => {
+    let pending = new Map<number, string>();
+    let frame = 0;
+
+    const flush = () => {
+      frame = 0;
+      const batch = pending;
+      pending = new Map();
+      setHistory((prev) => prev.map((item) => {
+        const preview = batch.get(item.id);
+        return preview === undefined ? item : { ...item, preview };
+      }));
+    };
+
+    const unlistenThumb = listen<[number, string]>("clipboard-thumbnail", (event) => {
+      const [id, preview] = event.payload;
+      storeRecentThumb(id, preview);
+      pending.set(id, preview);
+      if (!frame) frame = requestAnimationFrame(flush);
+    });
+
+    return () => {
+      unlistenThumb.then((f) => f());
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [setHistory]);
 
   useEffect(() => {
     fetchHistory();

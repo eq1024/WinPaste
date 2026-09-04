@@ -139,7 +139,12 @@ export const useClipboardActions = ({
   const createSticky = useCallback(
     async (item: ClipboardEntry) => {
       const { StickyManager } = await import("../../features/sticky/StickyManager");
-      await StickyManager.createSticky(item.content, item.content_type);
+      let content = item.content;
+      if (!content) {
+        // List payloads carry only thumbnails for base64 images.
+        content = await invoke<string>("get_clipboard_content", { id: item.id }).catch(() => "");
+      }
+      await StickyManager.createSticky(content, item.content_type);
       onStickyCreated?.();
     },
     [onStickyCreated]

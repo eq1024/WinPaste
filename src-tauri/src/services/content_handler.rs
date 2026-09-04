@@ -19,18 +19,9 @@ pub async fn open_content(
     mut content: String,
     content_type: String,
 ) -> Result<(), AppError> {
-    if (content_type == "image" || content_type == "file" || content_type == "video") && !content.starts_with("data:image") {
-        let first_file = content.lines().next().unwrap_or(&content);
-        let clean_path = if first_file.starts_with("file://") {
-            first_file.strip_prefix("file://").unwrap_or(first_file)
-        } else {
-            first_file
-        };
-        if !std::path::Path::new(clean_path).exists() {
-            return Err(AppError::IO("File not found".to_string()));
-        }
-    }
-    // 0. Resolve full content if ID is provided and content is placeholder/truncated
+    // 0. Resolve full content if ID is provided and content is placeholder/truncated.
+    // List payloads carry base64 images with an empty content field (thumbnail
+    // only), so this MUST run before any content-based checks below.
     if id != 0 {
         if id > 0 {
             // Fetch from Database
@@ -44,6 +35,18 @@ pub async fn open_content(
             if let Some(item) = session_items.iter().find(|i| i.id == id) {
                 content = item.content.clone();
             }
+        }
+    }
+
+    if (content_type == "image" || content_type == "file" || content_type == "video") && !content.starts_with("data:image") {
+        let first_file = content.lines().next().unwrap_or(&content);
+        let clean_path = if first_file.starts_with("file://") {
+            first_file.strip_prefix("file://").unwrap_or(first_file)
+        } else {
+            first_file
+        };
+        if !std::path::Path::new(clean_path).exists() {
+            return Err(AppError::IO("File not found".to_string()));
         }
     }
 
@@ -458,6 +461,9 @@ fn update_database_with_changes(
     preview: &str,
 ) {
     use crate::app_state::SessionHistory;
+
+    // The watched file changed: any cached hover preview is now stale.
+    crate::app::commands::history_cmd::invalidate_hover_preview(id);
 
     if id < 0 {
         if let Some(session) = app_handle.try_state::<SessionHistory>() {

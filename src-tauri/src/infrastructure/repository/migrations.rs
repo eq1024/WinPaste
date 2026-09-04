@@ -199,6 +199,20 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_migrations (version) VALUES (10)", [])?;
     }
 
+    // Migration 11: Searchable origin path for embedded image/video entries.
+    // Images copied from disk are embedded as data: URLs (so preview/paste
+    // survive file moves), but their original path is kept here so searching
+    // the folder name still finds them. Screenshots keep NULL → unsearchable.
+    if current_version < 11 {
+        if !has_column(conn, "clipboard_history", "source_file_path")? {
+            conn.execute(
+                "ALTER TABLE clipboard_history ADD COLUMN source_file_path TEXT",
+                [],
+            )?;
+        }
+        conn.execute("INSERT INTO schema_migrations (version) VALUES (11)", [])?;
+    }
+
     Ok(())
 }
 

@@ -515,7 +515,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
 }
 
 pub use pipeline::{ClipboardData, ClipboardPipeline, PipelineContext};
-pub use utils::{build_entry_preview, derive_rich_text_content, repair_html_fragment, truncate_html_for_preview};
+pub use utils::{build_entry_preview, derive_rich_text_content, repair_html_fragment, truncate_html_for_preview, build_image_thumbnail_data_url, build_image_preview_data_url};
 
 pub fn process_new_entry(
     app_handle: &AppHandle,

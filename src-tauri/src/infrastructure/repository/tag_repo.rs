@@ -219,7 +219,7 @@ impl TagRepository for SqliteTagRepository {
     fn get_entries_by_tag(&self, tag: &str) -> Result<Vec<ClipboardEntry>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn.prepare(
-            "SELECT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path 
+            "SELECT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path, ch.source_file_path 
              FROM clipboard_history ch
              INNER JOIN entry_tags et ON ch.id = et.entry_id
              WHERE et.tag = ? 
@@ -250,6 +250,7 @@ impl TagRepository for SqliteTagRepository {
                 is_external: row.get::<_, i32>(10)? == 1,
                 pinned_order: row.get(11).unwrap_or(0),
                 source_app_path: row.get(12).unwrap_or(None),
+                source_file_path: row.get(13).unwrap_or(None),
                 file_preview_exists: true, // simplified
             })
         }).map_err(|e| e.to_string())?;

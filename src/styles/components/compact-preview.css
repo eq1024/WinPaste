@@ -78,11 +78,36 @@ body.light-mode .compact-preview-root .compact-popover-portal.compact-preview-wi
     border-radius: 0 !important;
 }
 
+/* Media cards can shrink below the meta text width (a small image preview
+   hugs its intrinsic size). Keep the meta on ONE line: it clips/ellipsizes at
+   the card width (the window is sized to the image, so the meta never widens
+   the card) instead of stacking vertically or wrapping into several rows. */
+.compact-preview-root .compact-popover-portal.compact-preview-window .popover-meta {
+    overflow: hidden;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+}
+
+.compact-preview-root .compact-popover-portal.compact-preview-window .popover-meta .meta-row {
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+.compact-preview-root .compact-popover-portal.compact-preview-window .popover-meta .meta-row span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
 
 .compact-preview-root .compact-popover-portal.compact-preview-media {
+    /* Media content shrinks to fit the image, but never below a width that
+       keeps the one-line meta (type • app • time) complete — truncating that
+       info is worse than a little empty space beside a very narrow image.
+       The window size is computed in CompactPreviewWindow from the intrinsic
+       image size + this same floor; media box limits live on .popover-content. */
     min-width: 260px;
     max-width: var(--preview-media-max-width, 520px);
-    max-height: var(--preview-media-max-height, 360px);
 }
 
 .compact-preview-root .compact-popover-portal.compact-preview-media .popover-content {

@@ -68,6 +68,15 @@
     object-fit: contain !important;
 }
 
+/* Pending-thumbnail placeholder must match the compact image height so the
+   row doesn't jump when the background thumbnail streams in. */
+.history-item.compact .image-preview-pending {
+    height: 34px !important;
+    max-height: 34px !important;
+    min-width: 34px;
+    border-radius: 2px;
+}
+
 /* Deleted/moved image placeholder stays inside the compact row height */
 .history-item.compact .image-preview.error-placeholder {
     height: 34px !important;

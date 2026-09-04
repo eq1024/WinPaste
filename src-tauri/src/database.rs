@@ -367,6 +367,7 @@ mod tests {
                 html_content TEXT,
                 source_app TEXT NOT NULL,
                 source_app_path TEXT,
+                source_file_path TEXT,
                 timestamp INTEGER NOT NULL,
                 preview TEXT NOT NULL,
                 is_pinned INTEGER NOT NULL DEFAULT 0,
@@ -420,6 +421,7 @@ mod tests {
             html_content: None,
             source_app: "TestApp".to_string(),
             source_app_path: Some("C:\\TestApp.exe".to_string()),
+            source_file_path: None,
             timestamp: 123456789,
             preview: "Hello...".to_string(),
             is_pinned: false,
@@ -467,6 +469,7 @@ mod tests {
             html_content: None,
             source_app: "TestApp".to_string(),
             source_app_path: Some("C:\\TestApp.exe".to_string()),
+            source_file_path: None,
             timestamp: 123456789,
             preview: "[Image Content]".to_string(),
             is_pinned: false,
@@ -495,6 +498,84 @@ mod tests {
         assert!(!data_dir.join("attachments").exists());
 
         let _ = std::fs::remove_dir_all(&data_dir);
+    }
+
+    #[test]
+    fn test_search_excludes_base64_images_but_matches_local_path() {
+        let conn = setup_test_db();
+        let conn_arc = Arc::new(Mutex::new(conn));
+        let repo = SqliteClipboardRepository::new(conn_arc);
+
+        let mut png_bytes = Vec::new();
+        {
+            let mut cursor = std::io::Cursor::new(&mut png_bytes);
+            image::RgbaImage::from_pixel(2, 2, image::Rgba([10, 20, 30, 255]))
+                .write_to(&mut cursor, image::ImageFormat::Png)
+                .unwrap();
+        }
+        let data_url = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(&png_bytes)
+        );
+
+        // Screenshot: base64 image without a local address source → NOT searchable.
+        let screenshot = ClipboardEntry {
+            id: 0,
+            content_type: "image".to_string(),
+            content: data_url.clone(),
+            html_content: None,
+            source_app: "Snipping Tool".to_string(),
+            source_app_path: None,
+            source_file_path: None,
+            timestamp: 123456789,
+            preview: "[Image Content]".to_string(),
+            is_pinned: false,
+            tags: vec![],
+            use_count: 0,
+            is_external: false,
+            pinned_order: 0,
+            file_preview_exists: true,
+        };
+        repo.save(&screenshot, None).expect("保存失败");
+
+        // Image copied from disk: embedded as data URL, but has a local address
+        // source (xx1 folder) → searching the folder name finds it.
+        let from_disk = ClipboardEntry {
+            id: 0,
+            content_type: "image".to_string(),
+            content: data_url,
+            html_content: None,
+            source_app: "Explorer".to_string(),
+            source_app_path: None,
+            source_file_path: Some("C:\\Users\\me\\xx1\\photo.png".to_string()),
+            timestamp: 123456790,
+            preview: "[Image Content]".to_string(),
+            is_pinned: false,
+            tags: vec![],
+            use_count: 0,
+            is_external: false,
+            pinned_order: 0,
+            file_preview_exists: true,
+        };
+        repo.save(&from_disk, None).expect("保存失败");
+
+        // The base64 payload / mime header must never match (this was the
+        // freeze: every image matched "image"/"png" and the whole multi-MB
+        // payload was lowercased per keystroke).
+        assert!(repo.search("image", 20).unwrap().is_empty());
+        assert!(repo.search("iVBOR", 20).unwrap().is_empty());
+
+        // "png" no longer matches every screenshot through its base64 header,
+        // but it still finds the disk-copied image through its local address
+        // (source_file_path ...photo.png) — not through the base64 payload.
+        let png = repo.search("png", 20).unwrap();
+        assert_eq!(png.len(), 1);
+        assert_eq!(png[0].source_file_path.as_deref(), Some("C:\\Users\\me\\xx1\\photo.png"));
+
+        // The local address source still participates in search.
+        let found = repo.search("xx1", 20).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].source_file_path.as_deref(), Some("C:\\Users\\me\\xx1\\photo.png"));
     }
 
     #[test]

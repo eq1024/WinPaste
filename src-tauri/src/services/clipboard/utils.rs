@@ -363,7 +363,6 @@ pub fn build_entry_preview(content_type: &str, content: &str, html_content: Opti
     if content_type == "image" {
         return "[Image Content]".to_string();
     }
-
     let preview_text = if content_type == "rich_text" {
         let clean_text = derive_rich_text_content(content, html_content);
         let preview = collapse_preview_whitespace(&clean_text);
@@ -389,6 +388,100 @@ pub fn build_entry_preview(content_type: &str, content: &str, html_content: Opti
     } else {
         preview_text
     }
+}
+
+/// Build a small PNG thumbnail data URL from an image `data:` URL (or a local
+/// file path), capped to `max_dim` px on the longest edge.
+/// Used to serve lightweight list thumbnails for `data:` image entries whose
+/// full multi-MB payload is only fetched on demand (copy/paste/preview).
+/// Returns None when the image cannot be decoded (e.g. SVG — the image crate
+/// has no SVG decoder; callers keep the original content for those).
+pub fn build_image_thumbnail_data_url(source: &str, max_dim: u32) -> Option<String> {
+    use std::io::Cursor;
+    use image::ImageEncoder;
+
+    let img = if source.starts_with("data:") {
+        let payload = source.splitn(2, ',').nth(1)?.trim();
+        let bytes = general_purpose::STANDARD.decode(payload).ok()?;
+        image::load_from_memory(&bytes).ok()?
+    } else {
+        image::open(source).ok()?
+    };
+
+    let thumb = img.thumbnail(max_dim, max_dim);
+    let rgba = thumb.to_rgba8();
+    let mut out: Vec<u8> = Vec::new();
+    let mut cursor = Cursor::new(&mut out);
+    let encoder = image::codecs::png::PngEncoder::new_with_quality(
+        &mut cursor,
+        image::codecs::png::CompressionType::Fast,
+        image::codecs::png::FilterType::NoFilter,
+    );
+    encoder
+        .write_image(
+            rgba.as_raw(),
+            rgba.width(),
+            rgba.height(),
+            image::ExtendedColorType::Rgba8,
+        )
+        .ok()?;
+    Some(format!(
+        "data:image/png;base64,{}",
+        general_purpose::STANDARD.encode(&out)
+    ))
+}
+
+/// Build a WebP preview data URL from an image `data:` URL (or a local file
+/// path), capped to `max_dim` px on the longest edge.
+///
+/// Used by the hover preview: shipping a multi-MB base64 screenshot over IPC
+/// (and decoding the full-size image in the preview webview) is what made the
+/// compact preview feel slow. Lossless WebP ≈ PNG size, but Chromium decodes
+/// it much faster. Returns None when the image cannot be decoded (e.g. SVG)
+/// or is already within `max_dim` — callers then keep the original content;
+/// note `thumbnail()` upscales, so the size check must be explicit.
+pub fn build_image_preview_data_url(source: &str, max_dim: u32) -> Option<String> {
+    use image::ImageEncoder;
+    use std::io::Cursor;
+
+    let img = if source.starts_with("data:") {
+        let payload = source.splitn(2, ',').nth(1)?.trim();
+        let bytes = general_purpose::STANDARD.decode(payload).ok()?;
+        image::load_from_memory(&bytes).ok()?
+    } else {
+        // Header-only dimension check: a small local file doesn't need a full
+        // decode just to learn it fits the target box.
+        if let Ok((w, h)) = image::image_dimensions(source) {
+            if w <= max_dim && h <= max_dim {
+                return None;
+            }
+        }
+        image::open(source).ok()?
+    };
+
+    // Explicit guard: `thumbnail()` scales UP to fit the target box, which
+    // would turn a small icon into a huge blurry preview.
+    if img.width() <= max_dim && img.height() <= max_dim {
+        return None;
+    }
+
+    let preview = img.thumbnail(max_dim, max_dim);
+    let rgba = preview.to_rgba8();
+    let mut out: Vec<u8> = Vec::new();
+    let cursor = Cursor::new(&mut out);
+    let encoder = image::codecs::webp::WebPEncoder::new_lossless(cursor);
+    encoder
+        .write_image(
+            rgba.as_raw(),
+            rgba.width(),
+            rgba.height(),
+            image::ExtendedColorType::Rgba8,
+        )
+        .ok()?;
+    Some(format!(
+        "data:image/webp;base64,{}",
+        general_purpose::STANDARD.encode(&out)
+    ))
 }
 
 pub fn attach_rich_image_fallback(html: &str, payload: &str) -> String {
@@ -529,7 +622,7 @@ pub fn truncate_html_for_preview(html: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_entry_preview, contains_sensitive_info, derive_rich_text_content, parse_cf_html, truncate_html_for_preview};
+    use super::{build_entry_preview, contains_sensitive_info, derive_rich_text_content, parse_cf_html, truncate_html_for_preview, build_image_preview_data_url};
 
     #[test]
     fn sensitive_detection_matches_ai_tokens_with_sk_prefix() {
@@ -694,6 +787,50 @@ mod tests {
         // 等号两侧的原始空格保留
         let html2 = "<div><span>a</span><span> = </span><span>b</span></div>";
         assert_eq!(derive_rich_text_content("", Some(html2)), "a = b");
+    }
+
+    #[test]
+    fn image_preview_data_url_resizes_to_max_dim() {
+        use base64::{engine::general_purpose, Engine as _};
+        use image::Rgba;
+
+        let mut img = image::RgbaImage::new(800, 400);
+        for (x, _y, px) in img.enumerate_pixels_mut() {
+            *px = Rgba([(x % 256) as u8, 128, 64, 255]);
+        }
+        let mut png = Vec::new();
+        {
+            let mut cursor = std::io::Cursor::new(&mut png);
+            image::RgbaImage::write_to(&img, &mut cursor, image::ImageFormat::Png).unwrap();
+        }
+        let data_url = format!("data:image/png;base64,{}", general_purpose::STANDARD.encode(&png));
+
+        let preview = build_image_preview_data_url(&data_url, 400).expect("preview should build");
+        assert!(preview.starts_with("data:image/webp;base64,"));
+
+        let payload = preview.splitn(2, ',').nth(1).unwrap();
+        let bytes = general_purpose::STANDARD.decode(payload).unwrap();
+        let decoded = image::load_from_memory(&bytes).unwrap();
+        assert_eq!(decoded.width(), 400);
+        assert_eq!(decoded.height(), 200);
+    }
+
+    #[test]
+    fn image_preview_data_url_never_upscales() {
+        use base64::{engine::general_purpose, Engine as _};
+
+        let mut png = Vec::new();
+        {
+            let mut cursor = std::io::Cursor::new(&mut png);
+            image::RgbaImage::from_pixel(5, 5, image::Rgba([1, 2, 3, 255]))
+                .write_to(&mut cursor, image::ImageFormat::Png)
+                .unwrap();
+        }
+        let data_url = format!("data:image/png;base64,{}", general_purpose::STANDARD.encode(&png));
+
+        // Already within the target box: no resize is needed, so the original
+        // content must be kept (thumbnail() would otherwise upscale to 100x100).
+        assert!(build_image_preview_data_url(&data_url, 100).is_none());
     }
 }
 

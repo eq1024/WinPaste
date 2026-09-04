@@ -225,16 +225,71 @@ const CompactPreviewWindow = () => {
         const container = containerRef.current;
         if (!container) return;
 
-        const rect = container.getBoundingClientRect();
-        const logicalWidth = Math.ceil(rect.width);
-        const logicalHeight = Math.ceil(rect.height);
-        if (logicalWidth < 40 || logicalHeight < 40) return;
-
         const maxWidth = readCssPx("--preview-max-width", 560);
         const maxHeight = readCssPx("--preview-max-height", 560);
-        const minWidth = readCssPx("--preview-min-width", 320);
-        const width = Math.min(Math.max(logicalWidth, minWidth), maxWidth);
-        const height = Math.min(Math.max(logicalHeight, 80), maxHeight);
+        // Media content shrinks to fit: a forced min-width wrapped a small
+        // image in a wide card, leaving an empty band (and, placed left of the
+        // item, a visible gap between the preview and the history item).
+        const isMediaWindow = container.classList.contains("compact-preview-media");
+
+        // Media sizing must not depend on the current webview width: the
+        // window is created at 1x1 and a fit-content container cannot grow
+        // past that, so a container-rect measurement would get stuck. The
+        // intrinsic source size (img.naturalWidth / video.videoWidth) is
+        // valid regardless of layout, so measure that and add the chrome.
+        let mediaTarget: { width: number; height: number } | null = null;
+        if (isMediaWindow) {
+            const media = container.querySelector("img, video");
+            const isVideo = media instanceof HTMLVideoElement;
+            const nw = (media && !isVideo ? (media as HTMLImageElement).naturalWidth : isVideo ? media.videoWidth : 0) || 0;
+            const nh = (media && !isVideo ? (media as HTMLImageElement).naturalHeight : isVideo ? media.videoHeight : 0) || 0;
+            if (nw > 0 && nh > 0) {
+                const cs = getComputedStyle(container);
+                const cssPx = (raw: string) => Number.parseFloat(raw) || 0;
+                const chromeX = cssPx(cs.paddingLeft) + cssPx(cs.paddingRight) + cssPx(cs.borderLeftWidth) + cssPx(cs.borderRightWidth);
+                const chromeY = cssPx(cs.paddingTop) + cssPx(cs.paddingBottom) + cssPx(cs.borderTopWidth) + cssPx(cs.borderBottomWidth);
+                // The CSS media box cap (--preview-media-max-width) is
+                // border-box on the card: subtract the chrome so
+                // imgW + chromeX never exceeds it. Otherwise the window is
+                // wider than the card and a transparent band appears between
+                // the card and the hovered item (only for images that hit the
+                // cap — ordinary images don't).
+                const boxW = Math.max(40, readCssPx("--preview-media-max-width", 520) - chromeX);
+                const boxH = readCssPx("--preview-media-max-height", 360);
+                const scale = Math.min(1, boxW / nw, boxH / nh);
+                const imgW = Math.round(nw * scale);
+                const imgH = Math.round(nh * scale);
+                // The meta stays on one line; the card is at least wide enough
+                // for it to be complete (matches the CSS min-width below), and
+                // follows the image when the image is wider.
+                const meta = metaRef.current;
+                const metaH = Math.ceil(meta?.getBoundingClientRect().height ?? 20);
+                const metaStyle = meta ? getComputedStyle(meta) : null;
+                const metaMarginY = metaStyle
+                    ? (Number.parseFloat(metaStyle.marginTop) || 0) + (Number.parseFloat(metaStyle.marginBottom) || 0)
+                    : 0;
+                const MEDIA_CARD_MIN_WIDTH = 260;
+                mediaTarget = {
+                    width: Math.max(imgW + chromeX, MEDIA_CARD_MIN_WIDTH),
+                    height: metaH + metaMarginY + imgH + chromeY
+                };
+            }
+        }
+
+        let width: number;
+        let height: number;
+        if (mediaTarget) {
+            width = Math.min(Math.max(mediaTarget.width, 40), maxWidth);
+            height = Math.min(Math.max(mediaTarget.height, 80), maxHeight);
+        } else {
+            const rect = container.getBoundingClientRect();
+            const logicalWidth = Math.ceil(rect.width);
+            const logicalHeight = Math.ceil(rect.height);
+            if (logicalWidth < 40 || logicalHeight < 40) return;
+            const minWidth = isMediaWindow ? 0 : readCssPx("--preview-min-width", 320);
+            width = Math.min(Math.max(logicalWidth, minWidth), maxWidth);
+            height = Math.min(Math.max(logicalHeight, 80), maxHeight);
+        }
 
         const last = lastEmittedSizeRef.current;
         if (last && Math.abs(last.width - width) <= 1 && Math.abs(last.height - height) <= 1) return;
