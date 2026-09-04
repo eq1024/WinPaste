@@ -1,13 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ComponentProps, RefObject, ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { RefObject, ReactNode } from "react";
 import { motion, Reorder, useDragControls, AnimatePresence } from "framer-motion";
 import type { DragControls } from "framer-motion";
 import { ArrowUp, Clipboard, X } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import type { StickyEntry } from "../../../shared/types/sticky";
 import { StickyManager } from "../../sticky/StickyManager";
-import SettingsPanel from "../../settings/components/SettingsPanel";
-import TagManager from "../../tag/components/TagManager";
+import type { SettingsPanelProps } from "../../settings/components/SettingsPanel";
 import { VirtualClipboardList } from "../../clipboard/components/VirtualClipboardList";
 import type { ClipboardEntry } from "../../../shared/types";
 import type { VirtualClipboardListHandle } from "../../clipboard/types";
@@ -15,7 +14,12 @@ import { useSettingsStore } from "../../../shared/store/settingsStore";
 import { useHistoryStore } from "../../../shared/store/historyStore";
 import { useUIStore } from "../../../shared/store/uiStore";
 
-type SettingsPanelProps = ComponentProps<typeof SettingsPanel>;
+// Settings and tag manager are heavy (react-select, tag UI) and only rendered
+// when the user opens them — keep them out of the startup chunk. Both read CSS
+// variables set by the app shell, so they render fine after the chunk loads.
+const SettingsPanel = lazy(() => import("../../settings/components/SettingsPanel"));
+const TagManager = lazy(() => import("../../tag/components/TagManager"));
+
 type RenderItem = (
   item: ClipboardEntry,
   index: number,
@@ -205,7 +209,9 @@ const AppMainContent = ({
           {...transitionConfig}
           style={{ height: "100%" }}
         >
-          <TagManager t={t} theme="fluent" />
+          <Suspense fallback={null}>
+            <TagManager t={t} theme="fluent" />
+          </Suspense>
         </motion.div>
       ) : showSettings ? (
         <motion.div
@@ -215,7 +221,9 @@ const AppMainContent = ({
           style={{ display: "flex", flexDirection: "column", gap: "12px" }}
         >
           {settingsLoaded ? (
-            <SettingsPanel {...settingsPanelProps} />
+            <Suspense fallback={null}>
+              <SettingsPanel {...settingsPanelProps} />
+            </Suspense>
           ) : (
             <div
               style={{

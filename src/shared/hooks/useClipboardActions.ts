@@ -4,6 +4,7 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import type { ClipboardEntry } from "../types";
 import type { VirtualClipboardListHandle } from "../../features/clipboard/types";
+import { StickyManager } from "../../features/sticky/StickyManager";
 
 interface UseClipboardActionsOptions {
   t: (key: string) => string;
@@ -138,7 +139,6 @@ export const useClipboardActions = ({
 
   const createSticky = useCallback(
     async (item: ClipboardEntry) => {
-      const { StickyManager } = await import("../../features/sticky/StickyManager");
       let content = item.content;
       if (!content) {
         // List payloads carry only thumbnails for base64 images.

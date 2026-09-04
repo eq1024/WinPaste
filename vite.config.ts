@@ -30,6 +30,27 @@ export default defineConfig(async () => ({
   },
   build: {
     outDir: "dist/web",
-    emptyOutDir: true
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Split heavy vendor libraries into their own chunks: the startup
+        // entry stays small (it only loads what the list/shell needs), each
+        // vendor chunk is below the size warning, and app-code changes don't
+        // invalidate the vendor cache.
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("framer-motion")) return "motion";
+          if (id.includes("react-select")) return "settings-vendor";
+          if (id.includes("react-virtuoso")) return "list-vendor";
+          if (id.includes("lucide-react")) return "icons";
+          if (id.includes("@tauri-apps")) return "tauri";
+          if (id.includes("react")) return "react";
+          // Small helpers (clsx, zustand, tailwind-merge…) stay in the entry
+          // chunk — splitting them out created a react <-> vendor circular
+          // chunk for no size benefit.
+          return undefined;
+        }
+      }
+    }
   }
 }));

@@ -41,6 +41,7 @@ import { useScrollToSelection } from "./shared/hooks/useScrollToSelection";
 import { useClipboardItemRenderer } from "./shared/hooks/useClipboardItemRenderer";
 import { useOverlays } from "./shared/hooks/useOverlays";
 import { compactPreviewController } from "./features/clipboard/lib/compactPreviewController";
+import { StickyManager } from "./features/sticky/StickyManager";
 import { storeRecentThumb } from "./shared/lib/thumbnailCache";
 import type { ClipboardEntry } from "./shared/types";
 import type { VirtualClipboardListHandle } from "./features/clipboard/types";
@@ -462,7 +463,6 @@ const App = () => {
         const stickies = await invoke<any[]>("get_all_stickies");
         setStickyEntries(stickies || []);
         if (stickies && stickies.length > 0) {
-          const { StickyManager } = await import("./features/sticky/StickyManager");
           await StickyManager.restoreAllStickies(stickies);
         }
       } catch (err) {

@@ -8,7 +8,7 @@ import {
     getCurrentWindow,
     monitorFromPoint
 } from "@tauri-apps/api/window";
-import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { Locale } from "../../../shared/types";
 
 export type CompactPreviewPayload = {
@@ -263,7 +263,6 @@ class CompactPreviewController {
 
     private async tryReuseExistingWindow(): Promise<WebviewWindow | null> {
         try {
-            const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
             const existing = await WebviewWindow.getByLabel(PREVIEW_WINDOW_LABEL);
             if (!existing) return null;
             this.window = existing;
@@ -300,7 +299,6 @@ class CompactPreviewController {
                 const reused = await this.tryReuseExistingWindow();
                 if (reused) return reused;
 
-                const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
                 const previewWindow = new WebviewWindow(PREVIEW_WINDOW_LABEL, {
                     url: "index.html?window=compact-preview",
                     decorations: false,
