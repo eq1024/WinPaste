@@ -891,6 +891,11 @@
           <p data-i18n="feat_focus_desc">Built with Rust. Under 10 MB memory footprint. Instant cold start, zero input lag — always responsive, never bloated.</p>
         </div>
         <div class="feature-card">
+          <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg></div>
+          <h3 data-i18n="feat_lightweight_title">Lightweight Mode</h3>
+          <p data-i18n="feat_lightweight_desc">Toggle record-only mode from the tray: the main window and WebView are released while WinPaste keeps capturing in the background with zero windows. Restore the panel whenever you need it.</p>
+        </div>
+        <div class="feature-card">
           <div class="feature-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2" stroke-linecap="round">
               <circle cx="11" cy="11" r="8" />
@@ -1107,12 +1112,14 @@
           section_features_desc: 'WinPaste 去除了所有冗余，每一项功能都经过日常使用的反复打磨。',
           feat_focus_title: '极致轻快',
           feat_focus_desc: '基于 Rust 构建，内存占用不足 10 MB。冷启动即开即用，输入管线永不阻塞，流畅如一。',
+          feat_lightweight_title: '轻量模式',
+          feat_lightweight_desc: '托盘一键切换「仅记录」模式：释放主界面与 WebView，进程以零窗口在后台持续记录剪贴板，需要时随时恢复面板。',
           feat_search_title: '极速搜索',
           feat_search_desc: '按 Ctrl+F 或 / 键即可聚焦搜索框，支持按内容、类型、标签筛选，输入即搜，无延迟。',
           feat_cursor_title: '智能光标追踪',
           feat_cursor_desc: '通过 UIAutomation 接口精准获取光标位置，即使在 Chrome、VS Code、Electron 等自绘引擎应用中也能准确定位，面板始终出现在你需要的地方。',
           feat_format_title: '多格式捕获',
-          feat_format_desc: '支持纯文本、富文本 HTML、图片、文件路径和 GIF 动图。每条记录都标注来源应用，一眼便知从哪复制。',
+          feat_format_desc: '支持纯文本、富文本 HTML、图片、文件路径和 GIF 动图。每条记录都标注来源应用，一眼便知从哪复制。图片直接入库持久保存，缩略图异步加载，再多图片也流畅；复制文件条目后可直接在记事本、终端粘贴为路径列表。',
           feat_privacy_title: '隐私保护',
           feat_privacy_desc: '自动检测并脱敏手机号、身份证、邮箱和密码。支持自定义正则规则。敏感数据使用 AES 加密存储。',          feat_sequential_title: '顺序粘贴模式',
           feat_sequential_desc: '将多条内容加入队列，一键逐条粘贴。适合填表、批量处理结构化数据的场景。',
@@ -1178,12 +1185,14 @@
           section_features_desc: 'WinPaste strips away the bloat. Every feature earns its place through daily use.',
           feat_focus_title: 'Lightweight & fast',
           feat_focus_desc: 'Built with Rust. Under 10 MB memory footprint. Instant cold start, zero input lag — always responsive, never bloated.',
+          feat_lightweight_title: 'Lightweight Mode',
+          feat_lightweight_desc: 'Toggle record-only mode from the tray: the main window and WebView are released while WinPaste keeps capturing in the background with zero windows. Restore the panel whenever you need it.',
           feat_search_title: 'Instant search',
           feat_search_desc: 'Hit Ctrl+F or / to focus the search bar. Filter by content, type, or tags. Results update as you type — no delay.',
           feat_cursor_title: 'Smart cursor tracking',
           feat_cursor_desc: 'Uses UIAutomation to detect cursor position even in Chrome, VS Code, and Electron apps where traditional APIs fail. The panel always appears exactly where you need it.',
           feat_format_title: 'Multi-format capture',
-          feat_format_desc: 'Captures plain text, rich HTML, images, file paths, and GIFs. Each entry shows its source application so you know exactly where it came from.',
+          feat_format_desc: 'Captures plain text, rich HTML, images, file paths, and GIFs. Each entry shows its source application so you know exactly where it came from. Images are stored persistently with async thumbnails for smooth scrolling; copied files can also be pasted into Notepad or terminals as plain-text paths.',
           feat_privacy_title: 'Privacy protection',
           feat_privacy_desc: 'Auto-detects and masks phone numbers, ID cards, emails, and passwords. Add custom regex rules. Sensitive data is AES-encrypted at rest.',          feat_sequential_title: 'Sequential paste mode',
           feat_sequential_desc: 'Queue up multiple items and paste them one by one with a single hotkey. Perfect for filling forms or copying structured data.',
@@ -1230,7 +1239,7 @@
         }
       };
 
-      var VERSION = '1.6.5'; // fallback; replaced by CI
+      var VERSION = '1.8.1'; // fallback; replaced by CI
       var langToggle = document.getElementById('langToggle');
 
       // ── Detect language ──
