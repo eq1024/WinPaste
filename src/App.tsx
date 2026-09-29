@@ -190,7 +190,7 @@ const App = () => {
 
   const effectiveShowTagManager = showTagManager && tagManagerEnabled;
 
-  const debouncedSearch = useDebounce(search, 400);
+  const debouncedSearch = useDebounce(search, 200);
   const searchInputRef = useInputFocus<HTMLInputElement>();
   const virtualListRef = useRef<VirtualClipboardListHandle | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);

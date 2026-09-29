@@ -1,7 +1,6 @@
 use crate::app_state::{PasteQueue, SessionHistory, AppDataDir};
 use crate::database::DbState;
 use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
-use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use tauri::{Emitter, Manager, State};
 use crate::error::AppResult;
 
@@ -119,11 +118,14 @@ pub async fn paste_next_step(app_handle: tauri::AppHandle) {
                 return;
             }
 
-            // Get paste method from settings
-            let paste_method = {
-                let db_state = app_handle.state::<DbState>(); 
-                db_state.settings_repo.get("app.paste_method").ok().flatten().unwrap_or_else(|| "shift_insert".to_string())
-            };
+            // Get paste method from the in-memory settings cache (never the DB:
+            // a running search must not delay the paste keystroke).
+            let paste_method = app_handle
+                .state::<crate::app_state::SettingsState>()
+                .paste_method
+                .lock()
+                .unwrap()
+                .clone();
 
             // Send paste keystroke using centralized logic
             // We measure Alt state BEFORE sending keys to know if we should restore it

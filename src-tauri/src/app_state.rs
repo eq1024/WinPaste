@@ -28,6 +28,11 @@ pub struct SettingsState {
     pub arrow_key_selection: AtomicBool,
     pub main_hotkey: Mutex<String>,
     pub quick_paste_enabled: AtomicBool,
+    /// Cached `app.paste_method`. The paste pipeline must not touch the DB
+    /// between the user's gesture and the synthetic Ctrl+V keystroke: a
+    /// running search used to hold the connection mutex and delayed the
+    /// keystroke by seconds after the panel was already hidden.
+    pub paste_method: Mutex<String>,
     pub monitors: Mutex<Vec<tauri::Monitor>>,
 }
 

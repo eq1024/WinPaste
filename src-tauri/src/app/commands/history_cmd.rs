@@ -313,7 +313,12 @@ pub async fn search_clipboard_history(
     search_term: String,
     limit: i32,
 ) -> AppResult<Vec<ClipboardEntry>> {
-    let mut history = state.repo.search(&search_term, limit)?;
+    // New keystroke supersedes any in-flight search: older ones bail out at
+    // the next batch boundary instead of piling up on the search connection
+    // mutex. Search now runs on its own read-only connection, so it no longer
+    // competes with paste/bookkeeping work on the write connection.
+    crate::infrastructure::repository::clipboard_repo::bump_search_generation();
+    let mut history = state.search_repo.search(&search_term, limit)?;
 
     let term = search_term.to_lowercase();
     let session_items = session.inner().0.lock().unwrap();

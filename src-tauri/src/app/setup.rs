@@ -54,6 +54,22 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         e
     })?;
     let conn_arc = std::sync::Arc::new(std::sync::Mutex::new(conn));
+    // Dedicated read-only connection for search (see DbState::search_repo).
+    // Falls back to the shared connection when the file cannot be opened
+    // read-only (e.g. a WAL database on read-only media).
+    let search_conn = rusqlite::Connection::open_with_flags(
+        &db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .ok()
+    .map(|conn| {
+        let _ = conn.busy_timeout(std::time::Duration::from_millis(2000));
+        conn
+    });
+    match &search_conn {
+        Some(_) => info!("[DB] dedicated read-only search connection opened"),
+        None => crate::error!("[DB] read-only search connection unavailable; falling back to the shared connection"),
+    }
     let settings_repo = SqliteSettingsRepository::new(conn_arc.clone());
     
     // 4. Initial Settings & Reset Safety
@@ -62,7 +78,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let settings = load_settings(&settings_repo);
     
     // 5. App State Management
-    setup_state(app, conn_arc.clone(), &settings, app_dir.clone());
+    setup_state(app, conn_arc.clone(), search_conn, &settings, app_dir.clone());
     app.manage(EncryptionQueueState(init_encryption_queue(app_handle.clone())));
     spawn_sensitive_alignment(app_handle.clone());
     
@@ -216,6 +232,7 @@ pub struct StartupSettings {
     pub main_hotkey: String,
     pub quick_paste_enabled: bool,
     pub arrow_key_selection: bool,
+    pub paste_method: String,
 }
 
 fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
@@ -254,15 +271,26 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
         main_hotkey: repo.get("app.hotkey").unwrap_or(Some("Win+V".to_string())).unwrap_or("Win+V".to_string()),
         quick_paste_enabled: repo.get("app.quick_paste_enabled").unwrap_or(Some("true".to_string())).map(|v| v == "true").unwrap_or(true),
         arrow_key_selection: repo.get("app.arrow_key_selection").unwrap_or(Some("false".to_string())).map(|v| v == "true").unwrap_or(false),
+        paste_method: repo.get("app.paste_method").unwrap_or(Some("shift_insert".to_string())).unwrap_or("shift_insert".to_string()),
     }
 }
 
-fn setup_state(app: &App, conn_arc: std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>, s: &StartupSettings, app_dir: std::path::PathBuf) {
+fn setup_state(
+    app: &App,
+    conn_arc: std::sync::Arc<std::sync::Mutex<rusqlite::Connection>>,
+    search_conn: Option<rusqlite::Connection>,
+    s: &StartupSettings,
+    app_dir: std::path::PathBuf,
+) {
     let repo = SqliteClipboardRepository::new(conn_arc.clone());
+    let search_repo = match search_conn {
+        Some(conn) => SqliteClipboardRepository::new(std::sync::Arc::new(std::sync::Mutex::new(conn))),
+        None => SqliteClipboardRepository::new(conn_arc.clone()),
+    };
     let settings_repo = SqliteSettingsRepository::new(conn_arc.clone());
     let tag_repo = SqliteTagRepository::new(conn_arc.clone());
     let sticky_repo = SqliteStickyRepository::new(conn_arc.clone());
-    app.manage(DbState { conn: conn_arc, repo, settings_repo, tag_repo, sticky_repo });
+    app.manage(DbState { conn: conn_arc, repo, search_repo, settings_repo, tag_repo, sticky_repo });
     
     app.manage(SettingsState {
         deduplicate: AtomicBool::new(s.deduplicate),
@@ -288,6 +316,7 @@ fn setup_state(app: &App, conn_arc: std::sync::Arc<std::sync::Mutex<rusqlite::Co
         arrow_key_selection: AtomicBool::new(s.arrow_key_selection),
         main_hotkey: std::sync::Mutex::new(s.main_hotkey.clone()),
         quick_paste_enabled: AtomicBool::new(s.quick_paste_enabled),
+        paste_method: std::sync::Mutex::new(s.paste_method.clone()),
         monitors: std::sync::Mutex::new(Vec::new()),
     });
     

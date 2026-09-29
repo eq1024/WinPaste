@@ -6,6 +6,12 @@ use crate::database::DbState;
 use crate::error::{AppResult, AppError};
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
 
+/// 前端诊断日志：写进同一个 winpaste.log，方便排查键盘/输入法路径。
+#[tauri::command]
+pub fn frontend_log(msg: String) {
+    crate::info!("[FE] {}", msg);
+}
+
 #[derive(Debug, Serialize)]
 pub struct PlatformInfo {
     pub platform: String,

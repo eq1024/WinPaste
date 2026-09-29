@@ -311,7 +311,11 @@ pub fn start_input_worker(app_handle: AppHandle, mut rx: tokio::sync::mpsc::Unbo
                                     toggle_window(&app_handle);
                                 } else if action == "enter" && IS_SEARCH_FOCUSED.load(Ordering::Relaxed) {
                                     // 搜索框聚焦时 Enter 交给 WebView2/IME，不发导航事件
+                                    crate::info!("[HOOK] enter -> webview (search focused)");
                                 } else {
+                                    if action == "enter" {
+                                        crate::info!("[HOOK] enter -> navigation-action (search focused = {})", IS_SEARCH_FOCUSED.load(Ordering::Relaxed));
+                                    }
                                     let _ = app_handle.emit("navigation-action", action);
                                 }
                             }

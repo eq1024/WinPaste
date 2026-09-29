@@ -225,6 +225,11 @@ pub fn save_setting(
         "app.hide_tray_icon" => {
             settings_state.hide_tray_icon.store(value == "true", Ordering::Relaxed);
         },
+        "app.paste_method" => {
+            if let Ok(mut guard) = settings_state.paste_method.lock() {
+                *guard = value.clone();
+            }
+        },
         _ => {}
     }
 
@@ -395,6 +400,10 @@ pub fn reset_settings(
     let seq_hotkey = state.settings_repo.get("app.sequential_hotkey").unwrap_or(Some("Alt+V".to_string())).unwrap_or("Alt+V".to_string());
     let rich_hotkey = state.settings_repo.get("app.rich_paste_hotkey").unwrap_or(Some("Ctrl+Shift+Z".to_string())).unwrap_or("Ctrl+Shift+Z".to_string());
     let search_hotkey = state.settings_repo.get("app.search_hotkey").unwrap_or(Some("".to_string())).unwrap_or("".to_string());
+    // reset 会 clear + seed_defaults，paste_method 会回到默认值；内存缓存必须同步，
+    // 否则重启前（relaunch 失败时）粘贴方式仍用旧值。
+    let paste_method = state.settings_repo.get("app.paste_method").unwrap_or(Some("shift_insert".to_string())).unwrap_or("shift_insert".to_string());
+    { let mut guard = settings_state.paste_method.lock().unwrap(); *guard = paste_method; }
 
     { let mut guard = settings_state.main_hotkey.lock().unwrap(); *guard = main_hotkey.clone(); }
     { let mut guard = settings_state.sequential_paste_hotkey.lock().unwrap(); *guard = seq_hotkey.clone(); }

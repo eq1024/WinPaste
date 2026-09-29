@@ -213,6 +213,73 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_migrations (version) VALUES (11)", [])?;
     }
 
+    // Migration 12: FTS5 trigram index for substring search.
+    //
+    // The legacy search is `substr(content, 1, 100000) LIKE '%term%'` — a full
+    // table scan per keystroke. The trigram tokenizer keeps the exact same
+    // substring semantics (any script, including mid-word CJK) but answers
+    // from an index. Column values mirror the old WHERE clause: content is
+    // truncated to 100_000 chars and base64 `data:` payloads are stored as
+    // empty (they must never match); source_app / source_file_path are
+    // indexed as-is. Encrypted rows index their ciphertext (same behavior as
+    // the old LIKE, and the decrypt-scan still covers their plaintext).
+    // Everything is stored LOWERCASED so the index lookup is case-insensitive
+    // in exactly the same (ASCII) way as the LIKE it replaces — the search
+    // term is lowercased before matching.
+    //
+    // The UPDATE trigger carries a WHEN clause so pure bookkeeping writes
+    // (touch_entry / use_count / pin toggles) don't pay a delete+insert of
+    // a potentially 100KB FTS document on every paste.
+    if current_version < 12 {
+        conn.execute_batch("
+            CREATE VIRTUAL TABLE IF NOT EXISTS clipboard_fts USING fts5(
+                content,
+                source_app,
+                source_file_path,
+                tokenize='trigram'
+            );
+
+            -- Idempotent backfill: if a previous attempt crashed between
+            -- creating the table and recording the migration version, the
+            -- rerun must not double-index every row (FTS rowids are not
+            -- enforced unique).
+            DELETE FROM clipboard_fts;
+
+            INSERT INTO clipboard_fts(rowid, content, source_app, source_file_path)
+            SELECT id,
+                   CASE WHEN content LIKE 'data:%' THEN '' ELSE lower(substr(content, 1, 100000)) END,
+                   lower(source_app),
+                   lower(IFNULL(source_file_path, ''))
+            FROM clipboard_history;
+
+            CREATE TRIGGER IF NOT EXISTS clipboard_fts_ai AFTER INSERT ON clipboard_history BEGIN
+                INSERT INTO clipboard_fts(rowid, content, source_app, source_file_path)
+                VALUES (new.id,
+                        CASE WHEN new.content LIKE 'data:%' THEN '' ELSE lower(substr(new.content, 1, 100000)) END,
+                        lower(new.source_app),
+                        lower(IFNULL(new.source_file_path, '')));
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS clipboard_fts_ad AFTER DELETE ON clipboard_history BEGIN
+                DELETE FROM clipboard_fts WHERE rowid = old.id;
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS clipboard_fts_au AFTER UPDATE ON clipboard_history
+            WHEN new.content <> old.content
+              OR new.source_app <> old.source_app
+              OR IFNULL(new.source_file_path, '') <> IFNULL(old.source_file_path, '')
+            BEGIN
+                DELETE FROM clipboard_fts WHERE rowid = old.id;
+                INSERT INTO clipboard_fts(rowid, content, source_app, source_file_path)
+                VALUES (new.id,
+                        CASE WHEN new.content LIKE 'data:%' THEN '' ELSE lower(substr(new.content, 1, 100000)) END,
+                        lower(new.source_app),
+                        lower(IFNULL(new.source_file_path, '')));
+            END;
+        ")?;
+        conn.execute("INSERT INTO schema_migrations (version) VALUES (12)", [])?;
+    }
+
     Ok(())
 }
 

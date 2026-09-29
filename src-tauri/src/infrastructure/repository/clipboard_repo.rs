@@ -28,6 +28,99 @@ fn is_syncable_content_type(content_type: &str) -> bool {
     matches!(content_type, "text" | "code" | "url" | "rich_text" | "image")
 }
 
+/// Search generation counter. Every new keystroke search bumps this once;
+/// an in-flight search compares its captured generation at batch boundaries
+/// and bails out early when a newer search superseded it. Without this,
+/// every debounced keystroke queued a full table scan + decrypt scan on the
+/// single connection mutex, and paste operations (which need the same
+/// mutex) had to wait for the whole backlog.
+static SEARCH_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn bump_search_generation() {
+    SEARCH_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn current_search_generation() -> u64 {
+    SEARCH_GENERATION.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+fn is_search_stale(gen: u64) -> bool {
+    current_search_generation() != gen
+}
+
+/// Build an FTS5 MATCH expression with LIKE-equivalent substring semantics:
+/// the whole term becomes one double-quoted phrase, which the trigram
+/// tokenizer treats as a literal substring pattern (works for CJK too,
+/// unlike token-prefix matching). Returns None for terms the trigram
+/// tokenizer cannot match (< 3 characters) — callers fall back to the
+/// legacy LIKE scan for those.
+fn build_fts_match(term: &str) -> Option<String> {
+    let trimmed = term.trim();
+    if trimmed.chars().count() < 3 {
+        return None;
+    }
+    Some(format!("\"{}\"", trimmed.replace('"', "\"\"")))
+}
+
+/// Raw search row as read from SQLite (content/preview/html still possibly
+/// encrypted). Decryption happens after the connection lock is released.
+type SearchRawRow = (
+    i64,            // id
+    String,         // content_type
+    String,         // content
+    Option<String>, // html_content
+    String,         // source_app
+    i64,            // timestamp
+    String,         // preview
+    i32,            // is_pinned
+    String,         // tags JSON
+    i32,            // use_count
+    i32,            // is_external
+    i64,            // pinned_order
+    Option<String>, // source_app_path
+    Option<String>, // source_file_path
+);
+
+/// Column list shared by every search query shape (LIKE / FTS / sensitive
+/// scan). Order must match `map_search_row`.
+const SEARCH_SELECT_COLS: &str = "ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path, ch.source_file_path";
+
+/// Run a search query and collect raw rows. The caller holds the connection
+/// lock; keep this strictly to SQL I/O (no decryption) so the lock is held
+/// for the shortest possible time.
+fn run_search_query(
+    conn: &Connection,
+    sql: &str,
+    params: &[&dyn rusqlite::ToSql],
+) -> Result<Vec<SearchRawRow>, String> {
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params, map_search_row).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row.map_err(|e| e.to_string())?);
+    }
+    Ok(out)
+}
+
+fn map_search_row(row: &rusqlite::Row) -> rusqlite::Result<SearchRawRow> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3).ok(),
+        row.get(4)?,
+        row.get(5)?,
+        row.get(6)?,
+        row.get(7)?,
+        row.get::<_, String>(8).unwrap_or_else(|_| "[]".to_string()),
+        row.get(9).unwrap_or(0),
+        row.get(10)?,
+        row.get(11).unwrap_or(0),
+        row.get(12).unwrap_or(None),
+        row.get(13).unwrap_or(None),
+    ))
+}
+
 
 pub trait ClipboardRepository {
     fn save(&self, entry: &ClipboardEntry, data_dir: Option<&std::path::Path>) -> Result<i64, String>;
@@ -211,6 +304,35 @@ impl SqliteClipboardRepository {
             encryption::decrypt_value(value).unwrap_or_else(|| value.to_string())
         } else {
             value.to_string()
+        }
+    }
+
+    /// Build an entry from a raw search row, decrypting on the way. Pure
+    /// CPU work — never call this while holding the connection lock.
+    fn search_raw_row_to_entry(&self, row: SearchRawRow) -> ClipboardEntry {
+        let (
+            id, content_type, content_raw, html_raw, source_app, timestamp,
+            preview_raw, is_pinned, tags_str, use_count, is_external,
+            pinned_order, source_app_path, source_file_path,
+        ) = row;
+        ClipboardEntry {
+            id,
+            content_type,
+            content: self.maybe_decrypt_text(&content_raw),
+            html_content: html_raw.map(|v| self.maybe_decrypt_text(&v)),
+            source_app,
+            timestamp,
+            preview: self.maybe_decrypt_text(&preview_raw),
+            is_pinned: is_pinned == 1,
+            tags: serde_json::from_str(&tags_str).unwrap_or_default(),
+            use_count,
+            is_external: is_external == 1,
+            pinned_order,
+            source_app_path,
+            source_file_path,
+            // No filesystem stat here — see the portable mapper below; the
+            // frontend verifies external files lazily.
+            file_preview_exists: true,
         }
     }
 
@@ -841,59 +963,55 @@ impl ClipboardRepository for SqliteClipboardRepository {
     }
 
     fn search(&self, query: &str, limit: i32) -> Result<Vec<ClipboardEntry>, String> {
-        let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        
         let term = query.trim().to_lowercase();
         if term.is_empty() { return Ok(Vec::new()); }
 
+        // Capture before doing any work: if a newer keystroke bumps the
+        // generation while we run, the batch boundaries below bail out
+        // early instead of piling up behind stale work on the DB mutex.
+        let my_gen = current_search_generation();
+
         #[cfg(feature = "portable")]
         {
-            // Portable version: Data is NOT encrypted, use conventional SQL LIKE search (fastest)
-            // Base64 images (`data:`) never match: only a local address source
-            // (source_file_path) participates in search for them.
-            let mut stmt = conn.prepare(
-                "SELECT DISTINCT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path, ch.source_file_path 
+            // Portable version: data is NOT encrypted. FTS trigram index for
+            // >= 3 char terms, legacy LIKE scan for shorter ones.
+            let like_sql = format!(
+                "SELECT DISTINCT {cols}
                  FROM clipboard_history ch
                  LEFT JOIN entry_tags et ON ch.id = et.entry_id
-                 WHERE (ch.content NOT LIKE 'data:%' AND substr(ch.content, 1, 100000) LIKE '%' || ? || '%')
-                    OR ch.source_file_path LIKE '%' || ? || '%'
-                    OR ch.source_app LIKE '%' || ? || '%'
-                    OR et.tag LIKE '%' || ? || '%'
-                 ORDER BY ch.timestamp DESC 
-                 LIMIT ?",
-            ).map_err(|e| e.to_string())?;
+                 WHERE (ch.content NOT LIKE 'data:%' AND substr(ch.content, 1, 100000) LIKE '%' || ?1 || '%')
+                    OR ch.source_file_path LIKE '%' || ?1 || '%'
+                    OR ch.source_app LIKE '%' || ?1 || '%'
+                    OR et.tag LIKE '%' || ?1 || '%'
+                 ORDER BY ch.timestamp DESC
+                 LIMIT ?2",
+                cols = SEARCH_SELECT_COLS
+            );
+            let fts_sql = format!(
+                "SELECT DISTINCT {cols}
+                 FROM clipboard_history ch
+                 LEFT JOIN entry_tags et ON ch.id = et.entry_id
+                 WHERE ch.id IN (SELECT rowid FROM clipboard_fts WHERE clipboard_fts MATCH ?1)
+                    OR et.tag LIKE '%' || ?2 || '%'
+                 ORDER BY ch.timestamp DESC
+                 LIMIT ?3",
+                cols = SEARCH_SELECT_COLS
+            );
 
-            let rows = stmt.query_map(params![term, term, term, term, limit], |row| {
-                 let tags_str: String = row.get::<_, String>(8).unwrap_or_else(|_| "[]".to_string());
-                 Ok(ClipboardEntry {
-                    id: row.get(0)?,
-                    content_type: row.get(1)?,
-                    content: row.get(2)?,
-                    html_content: row.get(3).ok(),
-                    source_app: row.get(4)?,
-                    timestamp: row.get(5)?,
-                    preview: row.get(6)?,
-                    is_pinned: row.get::<_, i32>(7)? == 1,
-                    tags: serde_json::from_str(&tags_str).unwrap_or_default(),
-                    use_count: row.get(9).unwrap_or(0),
-                    is_external: row.get::<_, i32>(10)? == 1,
-                    pinned_order: row.get(11).unwrap_or(0),
-                    source_app_path: row.get(12).unwrap_or(None),
-                    source_file_path: row.get(13).unwrap_or(None),
-                    // Never stat the filesystem inside a search query: with
-                    // up to 200 result rows this used to cost 200 disk calls
-                    // per keystroke (seconds on network drives). The frontend
-                    // lazily verifies external files via
-                    // check_external_file_exists (IntersectionObserver).
-                    file_preview_exists: true,
-                 })
-            }).map_err(|e| e.to_string())?;
+            let raw_rows: Vec<SearchRawRow> = {
+                let conn = self.conn.lock().map_err(|e| e.to_string())?;
+                match build_fts_match(&term) {
+                    Some(fts_query) => run_search_query(&conn, &fts_sql, &[&fts_query as &dyn rusqlite::ToSql, &term, &limit])
+                        // FTS missing/rejected -> behave exactly like before.
+                        .or_else(|_| run_search_query(&conn, &like_sql, &[&term as &dyn rusqlite::ToSql, &limit]))?,
+                    None => run_search_query(&conn, &like_sql, &[&term as &dyn rusqlite::ToSql, &limit])?,
+                }
+            }; // connection lock released here
 
-            let mut results = Vec::new();
-            for row in rows {
-                results.push(row.map_err(|e| e.to_string())?);
+            if is_search_stale(my_gen) {
+                return Ok(Vec::new());
             }
-            Ok(results)
+            Ok(raw_rows.into_iter().map(|r| self.search_raw_row_to_entry(r)).collect())
         }
 
         #[cfg(not(feature = "portable"))]
@@ -911,17 +1029,21 @@ impl ClipboardRepository for SqliteClipboardRepository {
             };
 
             // 1) SQL search for non-sensitive (plaintext) entries.
-            // Base64 images (`data:`) never match — only entries with a local
-            // address source participate through the address (source_file_path),
-            // e.g. an image copied from "xx1" is found by searching "xx".
-            let sql_non_sensitive = format!(
-                "SELECT DISTINCT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path, ch.source_file_path 
+            // FTS trigram index for >= 3 char terms (same substring
+            // semantics as LIKE -- base64 `data:` images are stored empty in
+            // the index so they still never match, and local address sources
+            // participate through source_file_path); shorter terms keep the
+            // legacy LIKE scan. Only the query runs under the connection
+            // lock; AES decryption of matched rows happens AFTER the lock is
+            // released, so a paste never waits for decrypt work.
+            let like_sql = format!(
+                "SELECT DISTINCT {cols}
                  FROM clipboard_history ch
                  LEFT JOIN entry_tags et ON ch.id = et.entry_id
                  WHERE NOT EXISTS (
-                     SELECT 1 FROM entry_tags se 
-                     WHERE se.entry_id = ch.id 
-                       AND se.tag COLLATE NOCASE IN {}
+                     SELECT 1 FROM entry_tags se
+                     WHERE se.entry_id = ch.id
+                       AND se.tag COLLATE NOCASE IN {tags}
                  )
                    AND (
                      (ch.content NOT LIKE 'data:%' AND substr(ch.content, 1, 100000) LIKE '%' || ?1 || '%')
@@ -931,122 +1053,106 @@ impl ClipboardRepository for SqliteClipboardRepository {
                    )
                  ORDER BY ch.timestamp DESC, ch.id DESC
                  LIMIT ?2",
-                sensitive_tags_sql
+                cols = SEARCH_SELECT_COLS,
+                tags = sensitive_tags_sql
+            );
+            let fts_sql = format!(
+                "SELECT DISTINCT {cols}
+                 FROM clipboard_history ch
+                 LEFT JOIN entry_tags et ON ch.id = et.entry_id
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM entry_tags se
+                     WHERE se.entry_id = ch.id
+                       AND se.tag COLLATE NOCASE IN {tags}
+                 )
+                   AND (
+                     ch.id IN (SELECT rowid FROM clipboard_fts WHERE clipboard_fts MATCH ?1)
+                     OR et.tag LIKE '%' || ?2 || '%'
+                   )
+                 ORDER BY ch.timestamp DESC, ch.id DESC
+                 LIMIT ?3",
+                cols = SEARCH_SELECT_COLS,
+                tags = sensitive_tags_sql
             );
 
-            let mut stmt = conn.prepare(&sql_non_sensitive).map_err(|e| e.to_string())?;
-            let rows = stmt.query_map(params![term, limit], |row| {
-                let tags_str: String = row.get(8).unwrap_or_else(|_| "[]".to_string());
-                let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-                let content_raw: String = row.get(2)?;
-                let preview_raw: String = row.get(6)?;
-                let html_raw: Option<String> = row.get(3).ok();
-                let content = self.maybe_decrypt_text(&content_raw);
-                let preview = self.maybe_decrypt_text(&preview_raw);
-                let html_content = html_raw.map(|v| self.maybe_decrypt_text(&v));
+            let raw_rows: Vec<SearchRawRow> = {
+                let conn = self.conn.lock().map_err(|e| e.to_string())?;
+                match build_fts_match(&term) {
+                    Some(fts_query) => run_search_query(&conn, &fts_sql, &[&fts_query as &dyn rusqlite::ToSql, &term, &limit])
+                        // FTS missing/rejected -> behave exactly like before.
+                        .or_else(|_| run_search_query(&conn, &like_sql, &[&term as &dyn rusqlite::ToSql, &limit]))?,
+                    None => run_search_query(&conn, &like_sql, &[&term as &dyn rusqlite::ToSql, &limit])?,
+                }
+            }; // connection lock released here
 
-                Ok(ClipboardEntry {
-                    id: row.get(0)?,
-                    content_type: row.get(1)?,
-                    content: content.clone(),
-                    html_content,
-                    source_app: row.get(4)?,
-                    timestamp: row.get(5)?,
-                    preview,
-                    is_pinned: row.get::<_, i32>(7)? == 1,
-                    tags,
-                    use_count: row.get(9).unwrap_or(0),
-                    is_external: row.get::<_, i32>(10)? == 1,
-                    pinned_order: row.get(11).unwrap_or(0),
-                    source_app_path: row.get(12).unwrap_or(None),
-                    source_file_path: row.get(13).unwrap_or(None),
-                    // No filesystem stat here either — see the portable
-                    // mapper above; the frontend verifies lazily.
-                    file_preview_exists: true,
-                })
-            }).map_err(|e| e.to_string())?;
+            // A newer keystroke superseded this search while the query ran;
+            // skip the decryption work, the caller discards these anyway.
+            if is_search_stale(my_gen) {
+                return Ok(results);
+            }
 
-            for row in rows {
-                if let Ok(entry) = row {
-                    if seen.insert(entry.id) {
-                        results.push(entry);
-                    }
+            for raw in raw_rows {
+                let entry = self.search_raw_row_to_entry(raw);
+                if seen.insert(entry.id) {
+                    results.push(entry);
                 }
             }
 
-            // 2) Decrypt-scan sensitive or encrypted entries (only if needed)
+            // 2) Decrypt-scan sensitive or encrypted entries (only if
+            //    needed). Each batch takes the connection lock only long
+            //    enough to READ 500 rows, then decrypts and matches with the
+            //    lock released -- paste operations slip in between batches
+            //    instead of waiting for the whole encrypted history.
             if results.len() < limit as usize {
                 let mut cursor_ts = i64::MAX;
                 let mut cursor_id = i64::MAX;
-                let batch_size = 500;
+                let batch_size: i32 = 500;
                 let enc_like = format!("{}%", ENCRYPT_PREFIX);
                 let sql_sensitive = format!(
-                    "SELECT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path, ch.source_file_path 
+                    "SELECT {cols}
                      FROM clipboard_history ch
                      WHERE (
                          EXISTS (
-                             SELECT 1 FROM entry_tags se 
-                             WHERE se.entry_id = ch.id 
-                               AND se.tag COLLATE NOCASE IN {}
+                             SELECT 1 FROM entry_tags se
+                             WHERE se.entry_id = ch.id
+                               AND se.tag COLLATE NOCASE IN {tags}
                          )
-                         OR ch.content LIKE ?1 
-                         OR ch.preview LIKE ?1 
+                         OR ch.content LIKE ?1
+                         OR ch.preview LIKE ?1
                          OR ch.html_content LIKE ?1
                      )
                        AND ((ch.timestamp < ?2) OR (ch.timestamp = ?2 AND ch.id < ?3))
                      ORDER BY ch.timestamp DESC, ch.id DESC
                      LIMIT ?4",
-                    sensitive_tags_sql
+                    cols = SEARCH_SELECT_COLS,
+                    tags = sensitive_tags_sql
                 );
 
                 loop {
-                    let mut stmt = conn.prepare(&sql_sensitive).map_err(|e| e.to_string())?;
-                    let rows = stmt.query_map(
-                        params![enc_like, cursor_ts, cursor_id, batch_size],
-                        |row| {
-                            let tags_str: String = row.get(8).unwrap_or_else(|_| "[]".to_string());
-                            Ok(ClipboardEntry {
-                                id: row.get(0)?,
-                                content_type: row.get(1)?,
-                                content: row.get(2)?, // Encrypted
-                                html_content: row.get(3).ok(),
-                                source_app: row.get(4)?,
-                                timestamp: row.get(5)?,
-                                preview: row.get(6)?, // Encrypted
-                                is_pinned: row.get::<_, i32>(7)? == 1,
-                                tags: serde_json::from_str(&tags_str).unwrap_or_default(),
-                                use_count: row.get(9).unwrap_or(0),
-                                is_external: row.get::<_, i32>(10)? == 1,
-                                pinned_order: row.get(11).unwrap_or(0),
-                                source_app_path: row.get(12).unwrap_or(None),
-                                source_file_path: row.get(13).unwrap_or(None),
-                                file_preview_exists: true, // Will be updated after decryption
-                            })
-                        },
-                    ).map_err(|e| e.to_string())?;
-
-                    let mut batch: Vec<ClipboardEntry> = Vec::new();
-                    for row in rows {
-                        if let Ok(mut entry) = row {
-                            entry.content = self.maybe_decrypt_text(&entry.content);
-                            entry.preview = self.maybe_decrypt_text(&entry.preview);
-                            if let Some(html) = entry.html_content.take() {
-                                entry.html_content = Some(self.maybe_decrypt_text(&html));
-                            }
-                            if entry.is_external {
-                                // No filesystem stat inside the search scan —
-                                // the frontend verifies external files lazily.
-                                entry.file_preview_exists = true;
-                            }
-                            batch.push(entry);
-                        }
-                    }
-
-                    if batch.is_empty() {
+                    if is_search_stale(my_gen) {
                         break;
                     }
 
-                    for entry in batch.iter() {
+                    let batch_raw: Vec<SearchRawRow> = {
+                        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+                        run_search_query(
+                            &conn,
+                            &sql_sensitive,
+                            &[&enc_like as &dyn rusqlite::ToSql, &cursor_ts, &cursor_id, &batch_size],
+                        )?
+                    };
+
+                    if batch_raw.is_empty() {
+                        break;
+                    }
+
+                    if let Some(last) = batch_raw.last() {
+                        cursor_ts = last.5;
+                        cursor_id = last.0;
+                    }
+
+                    for raw in batch_raw {
+                        let entry = self.search_raw_row_to_entry(raw);
                         let matches = entry.searchable_text().to_lowercase().contains(&term)
                             || entry.source_app.to_lowercase().contains(&term)
                             || entry
@@ -1055,7 +1161,7 @@ impl ClipboardRepository for SqliteClipboardRepository {
                                 .any(|t| t.to_lowercase().contains(&term));
 
                         if matches && seen.insert(entry.id) {
-                            results.push(entry.clone());
+                            results.push(entry);
                             if results.len() >= limit as usize {
                                 break;
                             }
@@ -1063,13 +1169,6 @@ impl ClipboardRepository for SqliteClipboardRepository {
                     }
 
                     if results.len() >= limit as usize {
-                        break;
-                    }
-
-                    if let Some(last) = batch.last() {
-                        cursor_ts = last.timestamp;
-                        cursor_id = last.id;
-                    } else {
                         break;
                     }
                 }
@@ -1082,6 +1181,7 @@ impl ClipboardRepository for SqliteClipboardRepository {
             Ok(results)
         }
     }
+
 
     fn delete(&self, id: i64, data_dir: Option<&std::path::Path>) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;

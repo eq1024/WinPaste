@@ -30,6 +30,28 @@ use windows::Win32::UI::WindowsAndMessaging::{
 const RICH_IMAGE_FALLBACK_PREFIX: &str = "<!--WINPASTE_RICH_IMAGE:";
 const RICH_IMAGE_FALLBACK_SUFFIX: &str = "-->";
 
+/// Marker appended by the backend when a list payload truncates long text
+/// (see get_clipboard_history / search_clipboard_history).
+const TRUNCATED_MARKER: &str = "... [Truncated for speed]";
+
+/// Does the list payload already carry this entry's full paste content?
+///
+/// The list intentionally strips multi-MB base64 image payloads (memory) and
+/// truncates text beyond 2000 chars / rich-text html beyond 5000, so those
+/// must be re-fetched by id before pasting. A short plain-text entry already
+/// has its complete content in the frontend — skipping the DB re-fetch keeps
+/// the paste path entirely off the connection mutex in the common case, so
+/// selecting an entry never waits for whatever the database is doing.
+///
+/// False positives (a user's actual text happens to end with the marker)
+/// only cause a harmless extra fetch; false negatives would paste truncated
+/// content, so the check is deliberately conservative: only plain text-ish
+/// types qualify, rich_text always re-fetches (its html_content is separate
+/// and may have been preview-truncated).
+fn list_payload_is_full_content(content_type: &str, content: &str) -> bool {
+    matches!(content_type, "text" | "code" | "url") && !content.ends_with(TRUNCATED_MARKER)
+}
+
 // SVG temp files use a counter suffix so two pastes within the same second
 // can never collide on one path (which would silently overwrite the first
 // SVG). Stale files are cleaned up at startup via cleanup_svg_temp_files().
@@ -182,8 +204,11 @@ pub async fn copy_to_clipboard(
 
     let mut html_content: Option<String> = None;
 
-    // 0. Resolve full content if ID is provided and content is placeholder/truncated
-    if id != 0 {
+    // 0. Resolve full content only when the list payload can't carry it
+    //    (stripped base64 images, truncated long text/html). Short plain
+    //    text is already complete in the frontend — pasting it touches no
+    //    DB at all, so selection is never blocked by database work.
+    if id != 0 && !list_payload_is_full_content(&content_type, &content) {
         if id > 0 {
             // Fetch from Database
             if let Ok(Some((full_content, _ctype, html))) = state.repo.get_entry_content_with_html(id) {
@@ -788,8 +813,15 @@ async fn perform_paste_action(
         crate::info!("[DEBUG] Right before sending paste keystroke, Foreground Window is {:?}", fg_before_paste.0 as usize);
     }
 
-    // Get paste method from settings
-    let paste_method = state.settings_repo.get("app.paste_method").ok().flatten().unwrap_or_else(|| "shift_insert".to_string());
+    // Read the paste method from the in-memory settings cache: touching the
+    // DB here used to stall the keystroke for seconds while a search held the
+    // connection mutex (panel already hidden → paste appeared to do nothing).
+    let paste_method = app_handle
+        .state::<SettingsState>()
+        .paste_method
+        .lock()
+        .unwrap()
+        .clone();
 
     // Send paste keystroke
     crate::info!("[DEBUG] Calling send_paste_keystroke...");
@@ -1223,4 +1255,37 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::list_payload_is_full_content;
+
+    #[test]
+    fn list_payload_full_content_rules() {
+        // Short plain text: complete in the list, paste skips the DB entirely.
+        assert!(list_payload_is_full_content("text", "hello"));
+        assert!(list_payload_is_full_content("code", "fn main() {}"));
+        assert!(list_payload_is_full_content("url", "https://example.com"));
+
+        // Truncated long text: must re-fetch the full content by id.
+        assert!(!list_payload_is_full_content(
+            "text",
+            "aaaa... [Truncated for speed]"
+        ));
+
+        // rich_text always re-fetches: html_content may be preview-truncated.
+        assert!(!list_payload_is_full_content("rich_text", "short"));
+
+        // Images: list strips base64 payloads (empty content) -> re-fetch.
+        assert!(!list_payload_is_full_content("image", ""));
+        assert!(!list_payload_is_full_content("image", "data:image/png;base64,xx"));
+
+        // A false positive (real text ending with the marker) only costs a
+        // harmless extra fetch — never a truncated paste.
+        assert!(!list_payload_is_full_content(
+            "text",
+            "my notes... [Truncated for speed]"
+        ));
+    }
 }
