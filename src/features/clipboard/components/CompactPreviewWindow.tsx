@@ -9,13 +9,21 @@ import {
     FileText,
     Image as ImageIcon,
     Link as LinkIcon,
+    Lock,
     Video
 } from "lucide-react";
 import HtmlContent from "../../../shared/components/HtmlContent";
+import { translations } from "../../../locales";
 import { getConciseTime } from "../../../shared/lib/utils";
 import type { CompactPreviewPayload, CompactPreviewReadyPayload } from "../lib/compactPreviewController";
 import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
 import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot";
+
+const translate = (key: string, language?: string) => {
+    const k = key as keyof typeof translations["zh"];
+    const table = (translations as any)[language ?? "en"];
+    return (table && table[k]) || (translations as any).en[k] || key;
+};
 
 const RICH_IMAGE_FALLBACK_PREFIX = "<!--WINPASTE_RICH_IMAGE:";
 const RICH_IMAGE_FALLBACK_SUFFIX = "-->";
@@ -391,6 +399,16 @@ const CompactPreviewWindow = () => {
 
     const content = useMemo(() => {
         if (!payload) return null;
+        // 敏感条目(隐私保护开启、未点眼睛解锁):只显示遮罩提示,
+        // payload 里本来就没有任何明文内容。
+        if (payload.masked) {
+            return (
+                <div className="compact-preview-masked">
+                    <Lock size={18} />
+                    <span>{translate("hidden", payload.language)}</span>
+                </div>
+            );
+        }
         if (payload.contentType === "image") {
             const src = payload.content.startsWith("data:")
                 ? payload.content
@@ -481,7 +499,7 @@ const CompactPreviewWindow = () => {
         <div className="compact-preview-root">
             <div
                 ref={containerRef}
-                className={`compact-popover-portal compact-preview-window theme-fluent ${payload?.contentType === "image" ? "compact-preview-image" : ""} ${payload?.contentType === "image" || payload?.contentType === "video" || !!effectiveRichImageFallbackSrc ? "compact-preview-media" : ""} ${payload?.colorMode === "light" ? "light-mode" : "dark-mode"}`}
+                className={`compact-popover-portal compact-preview-window theme-fluent ${payload?.masked ? "compact-preview-sensitive" : ""} ${payload?.contentType === "image" && !payload?.masked ? "compact-preview-image" : ""} ${!payload?.masked && (payload?.contentType === "image" || payload?.contentType === "video" || !!effectiveRichImageFallbackSrc) ? "compact-preview-media" : ""} ${payload?.colorMode === "light" ? "light-mode" : "dark-mode"}`}
                 style={{ display: "flex", flexDirection: "column" }}
             >
                 <div ref={metaRef} className="popover-meta">

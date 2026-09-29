@@ -204,8 +204,34 @@ const ClipboardItem = ({
         return () => { cancelled = true; };
     }, [item.content_type, item.file_preview_exists, singleFilePath]);
 
+    // 预览窗是全局单例:带上归属 id,别让其他条目的 unmount/leave 误关本条目正在展示的预览
+    const previewOwner = String(item.id);
+
     const showCompactPreview = async (anchor: CompactPreviewAnchor) => {
         if (item.is_external && item.file_preview_exists === false) return;
+        if (isSensitiveHidden) {
+            // 隐私保护开启且条目未解锁时,不要把内容(文本/图片/富文本)送到预览窗,
+            // 否则紧凑模式下鼠标悬停就等于直接暴露明文。
+            try {
+                await compactPreviewController.show(anchor, {
+                    contentType: item.content_type,
+                    content: "",
+                    preview: "",
+                    sourceApp: item.source_app,
+                    timestamp: item.timestamp,
+                    language,
+                    theme: "fluent",
+                    colorMode: colorMode === "light" ? "light" : "dark",
+                    richTextSnapshotPreview: false,
+                    clipboardItemFontSize,
+                    clipboardTagFontSize,
+                    masked: true
+                }, previewOwner);
+            } catch (err) {
+                console.error("Failed to show masked compact preview:", err);
+            }
+            return;
+        }
         try {
             let content = item.content;
             if (item.content_type === "image") {
@@ -233,7 +259,7 @@ const ClipboardItem = ({
                 richTextSnapshotPreview,
                 clipboardItemFontSize,
                 clipboardTagFontSize
-            });
+            }, previewOwner);
         } catch (err) {
             console.error("Failed to show compact preview:", err);
         }
@@ -249,8 +275,8 @@ const ClipboardItem = ({
     }, [useSnapshotPreviewImage, effectiveRichTextSnapshotSrc, item.id]);
 
     useEffect(() => { if (isEditingTags && tagInputRef.current) tagInputRef.current.focus(); }, [isEditingTags]);
-    useEffect(() => { if (!canShowCompactPreview) void compactPreviewController.hide(); }, [canShowCompactPreview]);
-    useEffect(() => { return () => { if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current); hoverAnchorRef.current = null; void compactPreviewController.hide(); }; }, []);
+    useEffect(() => { if (!canShowCompactPreview) void compactPreviewController.hide(previewOwner); }, [canShowCompactPreview, previewOwner]);
+    useEffect(() => { return () => { if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current); hoverAnchorRef.current = null; void compactPreviewController.hide(previewOwner); }; }, [previewOwner]);
 
     useEffect(() => {
         if (!item.is_external || item.file_preview_exists === false || !onExternalMissing) return;
@@ -355,8 +381,8 @@ const ClipboardItem = ({
                     e.preventDefault();
                 }
             }}
-            onClick={(e) => { if ((e.target as HTMLElement).closest('button, input, textarea')) return; if (item.is_external && item.file_preview_exists === false) { onSelect(); onOpen(e); return; } void compactPreviewController.hide(); onCopy(false); onSelect(); }}
-            onContextMenu={(e) => { if ((e.target as HTMLElement).closest('button, input, textarea')) return; if (item.is_external && item.file_preview_exists === false) { onSelect(); onOpen(e); return; } void compactPreviewController.hide(); e.preventDefault(); onCopy(true); onSelect(); }}
+            onClick={(e) => { if ((e.target as HTMLElement).closest('button, input, textarea')) return; if (item.is_external && item.file_preview_exists === false) { onSelect(); onOpen(e); return; } void compactPreviewController.hide(previewOwner); onCopy(false); onSelect(); }}
+            onContextMenu={(e) => { if ((e.target as HTMLElement).closest('button, input, textarea')) return; if (item.is_external && item.file_preview_exists === false) { onSelect(); onOpen(e); return; } void compactPreviewController.hide(previewOwner); e.preventDefault(); onCopy(true); onSelect(); }}
             onMouseEnter={(e) => {
                 if (!canShowCompactPreview) return;
                 const rect = itemRef.current?.getBoundingClientRect();
@@ -383,7 +409,7 @@ const ClipboardItem = ({
                     itemRect: prev?.itemRect || { left: e.clientX, top: e.clientY, width: 0, height: 0 }
                 };
             }}
-            onMouseLeave={() => { if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current); hoverAnchorRef.current = null; void compactPreviewController.hide(); }}
+            onMouseLeave={() => { if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current); hoverAnchorRef.current = null; void compactPreviewController.hide(previewOwner); }}
         >
             <div className="item-header">
                 <div className="item-app-info">

@@ -1,5 +1,5 @@
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tauri_plugin_notification::NotificationExt;
 use crate::app_state::SettingsState;
 use crate::database::DbState;
@@ -43,6 +43,42 @@ pub fn get_platform_info() -> PlatformInfo {
             is_windows_10: false,
             is_windows_11: false,
         }
+    }
+}
+
+/// 把一个(可能已经是 topmost 的)窗口重新抬到 topmost 带最上层,且不抢焦点。
+///
+/// 为什么需要它:Tauri 依赖的 tao 对 `set_always_on_top` 做了 diff —— 窗口标志
+/// 没有变化时直接 return,连 SetWindowPos 都不会调用。预览窗创建时就带
+/// `alwaysOnTop: true`,所以之后每次 `setAlwaysOnTop(true)` 都是空操作,
+/// 一旦被其它 topmost 窗口(主面板每次显示都会把自己抬到最上层)盖住就再也上不来。
+#[tauri::command]
+pub fn raise_window_topmost(app: AppHandle, label: String) -> AppResult<()> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+            SWP_SHOWWINDOW,
+        };
+
+        let window = app
+            .get_webview_window(&label)
+            .ok_or_else(|| AppError::Internal(format!("window not found: {}", label)))?;
+        let hwnd_raw = window.hwnd().map_err(|e| AppError::Internal(e.to_string()))?;
+        let hwnd = HWND(hwnd_raw.0 as _);
+        unsafe {
+            // HWND_NOTOPMOST → HWND_TOPMOST 是 Windows 上"重新置顶但不激活"的经典做法:
+            // 只调一次 HWND_TOPMOST 时,若窗口已在 topmost 带内,并不会重新排到带顶。
+            let _ = SetWindowPos(hwnd, Some(HWND_NOTOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, label);
+        Ok(())
     }
 }
 

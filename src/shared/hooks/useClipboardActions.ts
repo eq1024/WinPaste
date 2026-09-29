@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
@@ -27,11 +27,25 @@ export const useClipboardActions = ({
   virtualListRef,
   onStickyCreated
 }: UseClipboardActionsOptions) => {
-  const copyToClipboard = useCallback(
+  // 粘贴管线（隐藏窗口→焦点归还→写剪贴板→发按键）需要数百毫秒。期间并发
+  // 再入会各自 SendInput 一遍 Ctrl+V，阻塞解除后表现为"一口气粘贴很多遍"。
+  // 策略：
+  //  - 同一条目的重复触发（连点/连按 Enter）→ 直接忽略（去重）
+  //  - 不同条目（Ctrl+Shift+数字 连续快贴多个条目）→ 排队串行执行，不丢弃
+  //  - Rust 侧另有 paste_in_progress 原子互斥作最终兜底
+  const pasteBusyRef = useRef(false);
+  const pasteRunningIdRef = useRef<number | null>(null);
+  const pasteQueueRef = useRef<Array<{
+    id: number; content: string; contentType: string;
+    pasteWithFormat: boolean; isExternal?: boolean; filePreviewExists?: boolean;
+  }>>([]);
+  const MAX_PASTE_QUEUE = 5;
+
+  const runPaste = useCallback(
     async (id: number, content: string, contentType: string, pasteWithFormat = false, isExternal?: boolean, filePreviewExists?: boolean) => {
       if (isExternal && filePreviewExists === false) {
-          pushToast(contentType === "image" ? t("image_deleted") : t("file_deleted"), 3000);
-          return;
+        pushToast(contentType === "image" ? t("image_deleted") : t("file_deleted"), 3000);
+        return;
       }
       try {
         if (document.activeElement instanceof HTMLElement) {
@@ -60,6 +74,10 @@ export const useClipboardActions = ({
         setSearch("");
       } catch (err) {
         const errStr = err?.toString() || "";
+        if (errStr.includes("paste_in_progress")) {
+            // Rust 侧互斥拒绝（前端锁万一被绕过时的兜底），静默忽略
+            return;
+        }
         if (errStr.includes("File not found") || errStr.includes("os error 2") || errStr.includes("系统找不到指定的文件") || errStr.includes("The system cannot find the file specified")) {
             pushToast(contentType === "image" ? t("image_deleted") : t("file_deleted"), 3000);
             setHistory(prev => prev.map(i => i.id === id ? { ...i, file_preview_exists: false } : i));
@@ -70,6 +88,36 @@ export const useClipboardActions = ({
       }
     },
     [deleteAfterPaste, moveToTopAfterPaste, pushToast, setHistory, setSearch, t]
+  );
+
+  const copyToClipboard = useCallback(
+    async (id: number, content: string, contentType: string, pasteWithFormat = false, isExternal?: boolean, filePreviewExists?: boolean) => {
+      if (pasteBusyRef.current) {
+        // 管线进行中：同条目忽略（连点去重），不同条目入队（连续快贴）
+        if (id !== pasteRunningIdRef.current
+          && !pasteQueueRef.current.some((p) => p.id === id)
+          && pasteQueueRef.current.length < MAX_PASTE_QUEUE) {
+          pasteQueueRef.current.push({ id, content, contentType, pasteWithFormat, isExternal, filePreviewExists });
+        }
+        return;
+      }
+      pasteBusyRef.current = true;
+      try {
+        let current: { id: number; content: string; contentType: string; pasteWithFormat: boolean; isExternal?: boolean; filePreviewExists?: boolean } =
+          { id, content, contentType, pasteWithFormat, isExternal, filePreviewExists };
+        for (;;) {
+          pasteRunningIdRef.current = current.id;
+          await runPaste(current.id, current.content, current.contentType, current.pasteWithFormat, current.isExternal, current.filePreviewExists);
+          const next = pasteQueueRef.current.shift();
+          if (!next) break;
+          current = next;
+        }
+      } finally {
+        pasteBusyRef.current = false;
+        pasteRunningIdRef.current = null;
+      }
+    },
+    [runPaste]
   );
 
   const openContent = useCallback(

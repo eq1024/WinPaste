@@ -155,3 +155,30 @@ body.light-mode .compact-preview-root .compact-popover-portal.compact-preview-wi
     padding: 0 !important;
     display: none !important;
 }
+
+/* Sensitive (masked) payloads: the preview window only receives a flag —
+   no plaintext/image data — so hovering a locked item can never leak it. */
+.compact-preview-root .compact-popover-portal.compact-preview-sensitive {
+    min-width: 240px;
+}
+
+.compact-preview-root .compact-preview-masked {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 2px;
+    font-size: 12px;
+    font-style: italic;
+    letter-spacing: 0.2px;
+    color: #b9b9b9;
+    white-space: nowrap;
+}
+
+.compact-preview-root .compact-preview-masked svg {
+    flex-shrink: 0;
+    opacity: 0.8;
+}
+
+.compact-preview-root .compact-popover-portal.compact-preview-window.light-mode .compact-preview-masked {
+    color: #6a6a6a;
+}

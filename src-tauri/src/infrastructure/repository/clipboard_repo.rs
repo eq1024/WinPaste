@@ -880,21 +880,12 @@ impl ClipboardRepository for SqliteClipboardRepository {
                     pinned_order: row.get(11).unwrap_or(0),
                     source_app_path: row.get(12).unwrap_or(None),
                     source_file_path: row.get(13).unwrap_or(None),
-                    file_preview_exists: {
-                        let is_ext = row.get::<_, i32>(10)? == 1;
-                        if is_ext {
-                            let c: String = row.get(2)?;
-                            let first_file = c.lines().next().unwrap_or(&c);
-                            let clean_path = if first_file.starts_with("file://") {
-                                first_file.strip_prefix("file://").unwrap_or(first_file)
-                            } else {
-                                first_file
-                            };
-                            std::path::Path::new(clean_path).exists()
-                        } else {
-                            true
-                        }
-                    }
+                    // Never stat the filesystem inside a search query: with
+                    // up to 200 result rows this used to cost 200 disk calls
+                    // per keystroke (seconds on network drives). The frontend
+                    // lazily verifies external files via
+                    // check_external_file_exists (IntersectionObserver).
+                    file_preview_exists: true,
                  })
             }).map_err(|e| e.to_string())?;
 
@@ -969,20 +960,9 @@ impl ClipboardRepository for SqliteClipboardRepository {
                     pinned_order: row.get(11).unwrap_or(0),
                     source_app_path: row.get(12).unwrap_or(None),
                     source_file_path: row.get(13).unwrap_or(None),
-                    file_preview_exists: {
-                        let is_ext = row.get::<_, i32>(10)? == 1;
-                        if is_ext {
-                            let first_file = content.lines().next().unwrap_or(&content);
-                            let clean_path = if first_file.starts_with("file://") {
-                                first_file.strip_prefix("file://").unwrap_or(first_file)
-                            } else {
-                                first_file
-                            };
-                            std::path::Path::new(clean_path).exists()
-                        } else {
-                            true
-                        }
-                    },
+                    // No filesystem stat here either — see the portable
+                    // mapper above; the frontend verifies lazily.
+                    file_preview_exists: true,
                 })
             }).map_err(|e| e.to_string())?;
 
@@ -1054,13 +1034,9 @@ impl ClipboardRepository for SqliteClipboardRepository {
                                 entry.html_content = Some(self.maybe_decrypt_text(&html));
                             }
                             if entry.is_external {
-                                let first_file = entry.content.lines().next().unwrap_or(&entry.content);
-                                let clean_path = if first_file.starts_with("file://") {
-                                    first_file.strip_prefix("file://").unwrap_or(first_file)
-                                } else {
-                                    first_file
-                                };
-                                entry.file_preview_exists = std::path::Path::new(clean_path).exists();
+                                // No filesystem stat inside the search scan —
+                                // the frontend verifies external files lazily.
+                                entry.file_preview_exists = true;
                             }
                             batch.push(entry);
                         }

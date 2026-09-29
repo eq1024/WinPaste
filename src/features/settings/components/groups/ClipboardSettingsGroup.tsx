@@ -3,6 +3,7 @@ import type { ComponentType, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import SettingsSelect from "../SettingsSelect";
 
 interface LabelWithHintProps {
     label: string;
@@ -502,13 +503,15 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             hint={props.t(`paste_method_${props.pasteMethod}_hint`)}
                             hintKey="paste_method"
                         />
-                        <select
-                            className="search-input"
-                            style={{ borderRadius: '0', padding: '6px', width: '110px', background: 'var(--bg-input)', border: '2px solid var(--border-dark)', color: 'var(--text-primary)', fontSize: '12px' }}
+                        <SettingsSelect
                             value={props.pasteMethod}
-                            onChange={async (e) => {
-                                const val = e.target.value;
-
+                            placeholder={props.t('paste_method')}
+                            options={[
+                                { value: 'shift_insert', label: props.t('paste_method_shift_insert') },
+                                { value: 'ctrl_v', label: props.t('paste_method_ctrl_v') },
+                                { value: 'game_mode', label: props.t('paste_method_game_mode') },
+                            ]}
+                            onChange={async (val) => {
                                 if (val === 'game_mode') {
                                     try {
                                         const isAdmin = await invoke<boolean>("check_is_admin");
@@ -539,11 +542,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 props.setPasteMethod(val);
                                 invoke("save_setting", { key: 'app.paste_method', value: val }).catch(console.error);
                             }}
-                        >
-                            <option value="shift_insert">{props.t('paste_method_shift_insert')}</option>
-                            <option value="ctrl_v">{props.t('paste_method_ctrl_v')}</option>
-                            <option value="game_mode">{props.t('paste_method_game_mode')}</option>
-                        </select>
+                        />
                     </div>
 
                     <div className="setting-item">

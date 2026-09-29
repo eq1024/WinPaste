@@ -23,4 +23,7 @@ target-codex-*/
 Thumbs.db
 .vscode/
 
+# Local AI assistant session memory (not part of the product)
+.workbuddy/
+
 TODO.md

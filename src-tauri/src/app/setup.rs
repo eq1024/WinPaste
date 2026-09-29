@@ -301,6 +301,14 @@ fn setup_main_window(app: &App, s: &StartupSettings) {
     WINDOW_PINNED.store(effective_pinned, Ordering::Relaxed);
     
     if let Some(window) = app.get_webview_window("main") {
+        // 先关掉原生阴影(无边框窗口的 DWM 边框),再恢复持久化尺寸。
+        //
+        // tao 对"无边框 + 阴影"的窗口会在 set_inner_size 时按阴影内边距补偿窗口矩形;
+        // 而阴影一旦被关掉(前端启动时 set_theme 也会调用 set_shadow(false)),
+        // WM_NCCALCSIZE 不再预留内边距,客户端区域会直接吃掉这部分边框(外框不变),
+        // 于是面板每次重启都比上次退出时宽/高出一个阴影边框(约 14x8px)。
+        // 配置里已设置 "shadow": false,这里再按正确顺序兜底一次。
+        let _ = window.set_shadow(false);
         if let (Some(w), Some(h)) = (s.window_width, s.window_height) {
             if w >= 200 && h >= 200 {
                 // Stored size is in logical pixels (see persist_window_size); apply as
@@ -785,24 +793,101 @@ fn apply_initial_theme(app: &App) {
 #[cfg(target_os = "windows")]
 fn init_win32_hooks(_app: &App) {
     std::thread::spawn(move || {
-        use windows::Win32::UI::WindowsAndMessaging::{GetMessageW, MSG, DispatchMessageW, TranslateMessage, WH_KEYBOARD_LL, WH_MOUSE_LL, SetWindowsHookExW, UnhookWindowsHookEx};
+        use windows::Win32::UI::WindowsAndMessaging::{GetMessageW, MSG, DispatchMessageW, TranslateMessage, WH_KEYBOARD_LL, WH_MOUSE_LL, SetWindowsHookExW, UnhookWindowsHookEx, HHOOK};
+        use windows::Win32::System::SystemInformation::GetTickCount;
+        const WM_APP_REINSTALL_HOOKS: u32 = 0x8000 + 0x51;
         unsafe {
             HOOK_THREAD_ID.store(windows::Win32::System::Threading::GetCurrentThreadId(), Ordering::Relaxed);
             let h_instance = GetModuleHandleW(None).expect("Failed to get module handle");
-            let h_hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), Some(HINSTANCE(h_instance.0)), 0).expect("Failed to set hook");
+            let mut h_hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), Some(HINSTANCE(h_instance.0)), 0).expect("Failed to set hook");
             HOOK_HANDLE.store(h_hook.0 as _, Ordering::SeqCst);
-            let h_mouse_hook = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), Some(HINSTANCE(h_instance.0)), 0).expect("Failed to set mouse hook");
+            let mut h_mouse_hook = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), Some(HINSTANCE(h_instance.0)), 0).expect("Failed to set mouse hook");
             HOOK_MOUSE_HANDLE.store(h_mouse_hook.0 as _, Ordering::SeqCst);
-            
+            crate::app::hooks::sync_modifier_state_from_os();
+            V_KEY_DOWN.store(false, Ordering::SeqCst);
+            HOOK_LAST_EVENT_TICK.store(GetTickCount(), Ordering::Relaxed);
+            crate::info!(">>> [HOOK] low-level hooks installed");
+            start_hook_watchdog(HOOK_THREAD_ID.load(Ordering::Relaxed), WM_APP_REINSTALL_HOOKS);
+
             let mut msg = MSG::default();
             while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                if msg.hwnd.0.is_null() && msg.message == WM_APP_REINSTALL_HOOKS {
+                    // 先装新钩子再摘旧的,避免出现"谁都没在拦"的真空期
+                    match SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), Some(HINSTANCE(h_instance.0)), 0) {
+                        Ok(new_hook) => {
+                            let old = HOOK_HANDLE.swap(new_hook.0 as _, Ordering::SeqCst);
+                            if !old.is_null() { let _ = UnhookWindowsHookEx(HHOOK(old as _)); }
+                            h_hook = new_hook;
+                            crate::info!(">>> [HOOK] keyboard hook reinstalled");
+                        }
+                        Err(err) => crate::error!(">>> [HOOK] keyboard hook reinstall failed: {:?}", err),
+                    }
+                    match SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), Some(HINSTANCE(h_instance.0)), 0) {
+                        Ok(new_hook) => {
+                            let old = HOOK_MOUSE_HANDLE.swap(new_hook.0 as _, Ordering::SeqCst);
+                            if !old.is_null() { let _ = UnhookWindowsHookEx(HHOOK(old as _)); }
+                            h_mouse_hook = new_hook;
+                        }
+                        Err(err) => crate::error!(">>> [HOOK] mouse hook reinstall failed: {:?}", err),
+                    }
+                    crate::app::hooks::sync_modifier_state_from_os();
+                    V_KEY_DOWN.store(false, Ordering::SeqCst);
+                    HOOK_LAST_EVENT_TICK.store(GetTickCount(), Ordering::Relaxed);
+                    continue;
+                }
                 let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
             let _ = UnhookWindowsHookEx(h_hook);
-            let h_mouse = HOOK_MOUSE_HANDLE.swap(null_mut(), Ordering::SeqCst);
-            if !h_mouse.is_null() {
-                let _ = UnhookWindowsHookEx(windows::Win32::UI::WindowsAndMessaging::HHOOK(h_mouse as _));
+            let _ = UnhookWindowsHookEx(h_mouse_hook);
+            HOOK_HANDLE.store(null_mut(), Ordering::SeqCst);
+            HOOK_MOUSE_HANDLE.store(null_mut(), Ordering::SeqCst);
+        }
+    });
+}
+
+/// 底层钩子看门狗。
+///
+/// Windows 会在钩子回调超时(LowLevelHooksTimeout)、休眠恢复、会话切换等场景下
+/// **静默摘除** 低级钩子,而应用侧完全收不到通知。一旦被摘除:
+///   - Win+V 不再被拦截/触发(系统剪贴板历史若关闭则表现为"Win+V 完全没反应")
+///   - 面板导航键拦截失效
+/// 这里每 30s 检查一次:如果线程已经有 60s 没收到任何钩子事件(鼠标移动也算),
+/// 但期间用户确实产生过输入,则判定钩子已失效,给钩子线程发消息就地重装。
+#[cfg(target_os = "windows")]
+fn start_hook_watchdog(hook_thread_id: u32, reinstall_msg: u32) {
+    std::thread::spawn(move || {
+        use windows::Win32::Foundation::{LPARAM, WPARAM};
+        use windows::Win32::System::SystemInformation::GetTickCount;
+        use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
+        use windows::Win32::UI::WindowsAndMessaging::PostThreadMessageW;
+
+        const STALE_MS: u32 = 60_000;
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(30));
+            unsafe {
+                let now = GetTickCount();
+                let last_hook = HOOK_LAST_EVENT_TICK.load(Ordering::Relaxed);
+                let since_hook = now.wrapping_sub(last_hook);
+                if since_hook < STALE_MS { continue; }
+
+                let mut info = LASTINPUTINFO {
+                    cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
+                    dwTime: 0,
+                };
+                if !GetLastInputInfo(&mut info).as_bool() { continue; }
+                let since_input = now.wrapping_sub(info.dwTime);
+                // 输入发生在"钩子最后一次事件"之后,说明这些输入根本没经过我们的钩子。
+                // (放宽到 5 分钟:钩子失联后用户往往敲几下就停下来了)
+                if since_input < since_hook && since_input < 5 * STALE_MS {
+                    crate::error!(
+                        ">>> [HOOK] no hook events for {}ms but user input was {}ms ago; requesting reinstall",
+                        since_hook, since_input
+                    );
+                    let _ = PostThreadMessageW(hook_thread_id, reinstall_msg, WPARAM(0), LPARAM(0));
+                    // 避免短时间内重复请求(重装本身会刷新心跳)
+                    HOOK_LAST_EVENT_TICK.store(now, Ordering::Relaxed);
+                }
             }
         }
     });
@@ -916,6 +1001,7 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                         if let Ok(h) = window.hwnd() {
                             if hwnd.0 != h.0 {
                                 crate::LAST_ACTIVE_HWND.store(hwnd.0 as usize, Ordering::Relaxed);
+                                crate::infrastructure::windows_api::window_tracker::push_recent_foreground(hwnd.0 as usize);
                             }
                         }
                     }

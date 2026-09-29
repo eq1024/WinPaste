@@ -22,6 +22,8 @@ export type CompactPreviewPayload = {
     theme?: string;
     colorMode?: "light" | "dark";
     richTextSnapshotPreview?: boolean;
+    /** 敏感条目未解锁时为 true:预览窗只显示遮罩,payload 里不带任何明文内容 */
+    masked?: boolean;
     clipboardItemFontSize?: number;
     clipboardTagFontSize?: number;
     maxWidth?: number;
@@ -69,6 +71,20 @@ const LIFE_CYCLE_EVENTS = ["tauri://hide", "tauri://close-requested", "tauri://d
 
 const setIgnoreBlurSafe = (ignore: boolean) => {
     invoke("set_ignore_blur", { ignore }).catch(() => {});
+};
+
+// tao 的 setAlwaysOnTop 是 diff 驱动的:窗口已经是 topmost 时是空操作,
+// 无法把窗口重新抬到 topmost 带最上层(会被主面板/其它置顶窗口永久盖住)。
+// 必须走一次 Win32 SetWindowPos(NOTOPMOST -> TOPMOST)。
+const raisePreviewWindowTopmost = async (): Promise<void> => {
+    try {
+        await invoke("raise_window_topmost", { label: PREVIEW_WINDOW_LABEL });
+    } catch {
+        // 尽力而为;失败时退化为原有的 topmost 标志(至少不改变现状)。
+        try {
+            await WebviewWindow.getByLabel(PREVIEW_WINDOW_LABEL).then((w) => w?.setAlwaysOnTop(true));
+        } catch {}
+    }
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
@@ -152,6 +168,7 @@ class CompactPreviewController {
     private listenersReady: Promise<void> | null = null;
     private readyListenerPromise: Promise<UnlistenFn | null> | null = null;
     private pending: { anchor: CompactPreviewAnchor; generation: number } | null = null;
+    private owner: string | null = null;
     private generation = 0;
     private requestSeq = 0;
     private readyRequestId = 0;
@@ -282,6 +299,13 @@ class CompactPreviewController {
         if (old) {
             try { await old.destroy(); } catch {}
         }
+        // 缓存句柄失效时,按 label 兜底清掉残留窗口,避免新窗口因 label 冲突创建失败。
+        try {
+            const zombie = await WebviewWindow.getByLabel(PREVIEW_WINDOW_LABEL);
+            if (zombie && zombie !== old) {
+                try { await zombie.destroy(); } catch {}
+            }
+        } catch {}
         this.window = null;
         this.mounted = false;
         this.mountedPromise = null;
@@ -465,7 +489,8 @@ class CompactPreviewController {
             }
             await previewWindow.show();
             try { await previewWindow.setSize(new PhysicalSize(size.width, size.height)); } catch {}
-            try { await previewWindow.setAlwaysOnTop(true); } catch {}
+            // 关键:每次显示后无条件抬升,否则会被主面板(每次显示都抢先置顶)压住
+            await raisePreviewWindowTopmost();
         } catch (err) {
             this.setIgnoreBlur(false);
             throw err;
@@ -486,10 +511,11 @@ class CompactPreviewController {
         }
     }
 
-    async show(anchor: CompactPreviewAnchor, payload: CompactPreviewPayload): Promise<void> {
+    async show(anchor: CompactPreviewAnchor, payload: CompactPreviewPayload, owner?: string): Promise<void> {
         const generation = ++this.generation;
         const requestId = ++this.requestSeq;
         this.pending = { anchor, generation };
+        this.owner = owner ?? null;
         this.readyRequestId = requestId;
         this.fallbackTimer = setTimeout(() => {
             void this.showDefaultFallback(anchor, generation);
@@ -527,6 +553,7 @@ class CompactPreviewController {
         }
 
         const sizePromise = this.waitForReady(requestId, 700);
+        let emitOk = true;
         try {
             await previewWindow.emit("compact-preview-update", {
                 ...payload,
@@ -534,13 +561,16 @@ class CompactPreviewController {
                 requestId
             });
         } catch {
+            // 之前这里直接 return:窗口/webview 已经死掉时,该次 hover 什么都不显示,
+            // 2.5s 兜底也因为 window 被清空而空转。改为走下面的重建+重试路径。
+            emitOk = false;
             this.window = null;
             this.mounted = false;
             this.mountedPromise = null;
-            return;
+            console.warn("[compact-preview] update emit failed; recreating preview window");
         }
 
-        const size = await sizePromise;
+        const size = emitOk ? await sizePromise : null;
         if (this.fallbackTimer) {
             clearTimeout(this.fallbackTimer);
             this.fallbackTimer = null;
@@ -601,7 +631,10 @@ class CompactPreviewController {
         }
     }
 
-    async hide(): Promise<void> {
+    async hide(owner?: string): Promise<void> {
+        // 归属保护:虚拟列表 unmount / 相邻条目 leave 时,不要把别的条目正在展示的预览关掉
+        if (owner && this.owner && this.owner !== owner) return;
+        this.owner = null;
         this.generation++;
         this.pending = null;
         if (this.fallbackTimer) {

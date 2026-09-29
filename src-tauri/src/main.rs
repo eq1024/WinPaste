@@ -63,6 +63,8 @@ fn main() {
             app::window_manager::set_navigation_enabled,
             app::window_manager::set_navigation_mode,
             app::window_manager::set_search_focused,
+            app::window_manager::panel_health_ack,
+            app::commands::raise_window_topmost,
             app::hooks::set_recording_mode,
             
             services::content_handler::open_content,

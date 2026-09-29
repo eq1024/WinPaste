@@ -123,6 +123,34 @@ fn resolve_rich_image_fallback_bytes(payload: &str) -> Option<Vec<u8>> {
     std::fs::read(decoded_path).ok()
 }
 
+/// copy_to_clipboard 的全程互斥守卫：任何返回路径 Drop 时无条件释放。
+struct PasteInFlightGuard;
+impl Drop for PasteInFlightGuard {
+    fn drop(&mut self) {
+        crate::PASTE_IN_FLIGHT_SINCE.store(0, Ordering::Relaxed);
+    }
+}
+
+/// 尝试获取粘贴互斥锁。已在进行中（10 秒内）则拒绝；超过 10 秒视为上一
+/// 次流程异常挂死，抢占重置。
+fn try_acquire_paste_lock() -> Result<PasteInFlightGuard, ()> {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    match crate::PASTE_IN_FLIGHT_SINCE.compare_exchange(0, now_ms, Ordering::SeqCst, Ordering::SeqCst) {
+        Ok(_) => Ok(PasteInFlightGuard),
+        Err(prev) => {
+            if now_ms.saturating_sub(prev) > 10_000 {
+                crate::PASTE_IN_FLIGHT_SINCE.store(now_ms, Ordering::SeqCst);
+                Ok(PasteInFlightGuard)
+            } else {
+                Err(())
+            }
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn copy_to_clipboard(
     app_handle: tauri::AppHandle,
@@ -137,6 +165,20 @@ pub async fn copy_to_clipboard(
     move_to_top: Option<bool>,
 ) -> AppResult<()> {
     crate::info!("[DEBUG] copy_to_clipboard called: id={}, paste={}, content_type={}, content_len={}", id, paste, content_type, content.len());
+
+    // 全程互斥：粘贴管线未走完时忽略新的粘贴请求（连点/连按 Enter 防抖）。
+    // 拒绝时返回 paste_in_progress，前端静默处理。纯复制（paste=false）不锁。
+    let _paste_guard = if paste {
+        match try_acquire_paste_lock() {
+            Ok(g) => Some(g),
+            Err(_) => {
+                crate::info!("[DEBUG] copy_to_clipboard rejected: paste already in flight (id={})", id);
+                return Err(AppError::Internal("paste_in_progress".to_string()));
+            }
+        }
+    } else {
+        None
+    };
 
     let mut html_content: Option<String> = None;
 
@@ -238,18 +280,29 @@ async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle) -> AppResu
 }
 
 async fn restore_focus_before_paste(_app_handle: &tauri::AppHandle) -> AppResult<()> {
-    let last_hwnd_val = crate::LAST_ACTIVE_HWND.load(Ordering::Relaxed);
-    crate::info!("[DEBUG] restore_focus_before_paste called. Target HWND = {:?}", last_hwnd_val);
-    
-    if last_hwnd_val == 0 {
-        return Err(AppError::Internal("No last active window captured".to_string()));
-    }
+    // 候选目标按从新到旧排序：LAST_ACTIVE_HWND 优先，再回退到最近前台快照
+    // 环形队列。旧实现只认单个 HWND，一旦目标窗口已关闭/最小化就直接放弃，
+    // 焦点留在面板上，随后的 Ctrl+V 会发给面板自己 —— 表现为"搜索后第一
+    // 次点击/回车粘贴不上，第二次才成功"（重新唤出面板时 toggle_window 恰好
+    // 把正确的前台补录了进去）。
+    use crate::infrastructure::windows_api::window_tracker;
+    let mut candidates: Vec<usize> = Vec::new();
+    candidates.push(crate::LAST_ACTIVE_HWND.load(Ordering::Relaxed));
+    candidates.extend(window_tracker::recent_foreground_candidates());
+    let mut seen = std::collections::HashSet::new();
+    candidates.retain(|v| window_tracker::is_valid_paste_target(*v) && seen.insert(*v));
+
+    crate::info!("[DEBUG] restore_focus_before_paste candidates = {:?}", candidates);
+
+    let Some(&target_val) = candidates.first() else {
+        return Err(AppError::Internal("No valid paste target window".to_string()));
+    };
 
     #[cfg(target_os = "windows")]
     {
         use crate::infrastructure::windows_ext::WindowExt;
-        
-        let target_hwnd = HWND(last_hwnd_val as _);
+
+        let target_hwnd = HWND(target_val as _);
         unsafe {
             if !IsWindowVisible(target_hwnd).as_bool() {
                  crate::info!("[WARN] Target window is no longer visible.");
@@ -711,6 +764,22 @@ async fn perform_paste_action(
     if stole_focus {
         crate::info!("[WARN] Clipboard window STOLE focus back, attempting one last restore...");
         let _ = restore_focus_before_paste(app_handle).await;
+
+        // 二次确认：如果焦点仍在自己窗口上（目标窗口全部失效时会发生），
+        // 绝不把 Ctrl+V 发给自己 —— 那会粘贴进面板的搜索框。此时剪贴板
+        // 已就绪，用户可手动粘贴；返回错误让前端弹提示。
+        #[cfg(target_os = "windows")]
+        unsafe {
+            let fg = GetForegroundWindow();
+            if let Some(window) = app_handle.get_webview_window("main") {
+                if let Ok(hwnd_raw) = window.hwnd() {
+                    if fg.0 == hwnd_raw.0 {
+                        crate::info!("[WARN] Foreground is still our own window after restore; skipping paste keystroke.");
+                        return Err(AppError::Internal("Paste target window is not available".to_string()));
+                    }
+                }
+            }
+        }
     }
 
     #[cfg(target_os = "windows")]

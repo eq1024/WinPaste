@@ -624,7 +624,7 @@ const App = () => {
     }
   }, [setSelectedIndex, pinnedCount]);
 
-  useListSelectionReset({ filteredHistory: navigationHistory, setSelectedIndex: setSelectedIndexAdapterVirtual });
+  useListSelectionReset({ filteredHistory: navigationHistory, selectedIndex: Math.max(0, selectedIndex - pinnedCount), setSelectedIndex: setSelectedIndexAdapterVirtual });
 
   useSearchFetchTrigger({ debouncedSearch, isComposing, typeFilter, fetchHistory });
 

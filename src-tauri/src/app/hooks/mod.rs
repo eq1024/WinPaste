@@ -13,6 +13,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, VK_CONTROL, VK_MENU, VK_LWIN, VK_RWIN,
     RegisterHotKey, UnregisterHotKey, MOD_WIN, MOD_NOREPEAT
 };
+#[cfg(target_os = "windows")]
+use windows::Win32::System::SystemInformation::GetTickCount;
 
 use crate::global_state::*;
 use crate::app_state::SettingsState;
@@ -21,6 +23,42 @@ use crate::infrastructure::windows_ext::WindowExt;
 
 // Store registered hotkey IDs for cleanup
 static BLOCKED_HOTKEY_IDS: std::sync::Mutex<Vec<i32>> = std::sync::Mutex::new(Vec::new());
+
+// 修饰键位掩码(存于 global_state::MODIFIER_STATE)。
+// 不区分左右键:Win+V 只需要知道"有没有按住"。
+pub const MODBIT_WIN: i32 = 1 << 0;
+pub const MODBIT_SHIFT: i32 = 1 << 1;
+pub const MODBIT_CTRL: i32 = 1 << 2;
+pub const MODBIT_ALT: i32 = 1 << 3;
+
+#[inline]
+fn modifier_bit(vk: u32) -> Option<i32> {
+    match vk {
+        0x5B | 0x5C => Some(MODBIT_WIN), // LWIN / RWIN
+        0x10 | 0xA0 | 0xA1 => Some(MODBIT_SHIFT),
+        0x11 | 0xA2 | 0xA3 => Some(MODBIT_CTRL),
+        0x12 | 0xA4 | 0xA5 => Some(MODBIT_ALT),
+        _ => None,
+    }
+}
+
+/// 读取按键当前物理状态。只作为事件流状态的兜底,不作为唯一判定依据。
+#[cfg(target_os = "windows")]
+#[inline]
+fn live_key_down(vk: i32) -> bool {
+    unsafe { (GetAsyncKeyState(vk) as u16 & 0x8000) != 0 }
+}
+
+/// 用系统状态整体重建修饰键掩码(钩子安装/重装、Win 按下时矫正用)。
+#[cfg(target_os = "windows")]
+pub fn sync_modifier_state_from_os() {
+    let mut state = 0i32;
+    if live_key_down(0x5B) || live_key_down(0x5C) { state |= MODBIT_WIN; }
+    if live_key_down(0x10) || live_key_down(0xA0) || live_key_down(0xA1) { state |= MODBIT_SHIFT; }
+    if live_key_down(0x11) || live_key_down(0xA2) || live_key_down(0xA3) { state |= MODBIT_CTRL; }
+    if live_key_down(0x12) || live_key_down(0xA4) || live_key_down(0xA5) { state |= MODBIT_ALT; }
+    MODIFIER_STATE.store(state, Ordering::Relaxed);
+}
 
 #[tauri::command]
 pub fn set_recording_mode(app_handle: AppHandle, enabled: bool) -> Result<(), String> {
@@ -98,28 +136,9 @@ pub fn start_input_worker(app_handle: AppHandle, mut rx: tokio::sync::mpsc::Unbo
         while let Some(event) = rx.recv().await {
             match event {
                 InputEvent::Keyboard { vk_code, is_down } => {
-                    // 0. Handle Win+V Hook Trigger if configured
-                    let is_win_v_configured = {
-                        let current = HOTKEY_STRING.lock().unwrap();
-                        is_win_v_hotkey(&current)
-                    };
-
-                    if is_win_v_configured && vk_code == 0x56 && is_down {
-                        let win_down = unsafe { (GetAsyncKeyState(VK_LWIN.0 as i32) as u16 & 0x8000 != 0) || (GetAsyncKeyState(VK_RWIN.0 as i32) as u16 & 0x8000 != 0) };
-                        // 仅响应精确的 Win+V，排除 Ctrl/Alt/Shift 同时按下（否则 Alt+Win+V 等也会误触发）
-                        let ctrl_down = unsafe { GetAsyncKeyState(VK_CONTROL.0 as i32) as u16 & 0x8000 != 0 };
-                        let alt_down = unsafe {
-                            (GetAsyncKeyState(VK_MENU.0 as i32) as u16 & 0x8000 != 0) ||
-                            (GetAsyncKeyState(0xA4i32) as u16 & 0x8000 != 0) ||
-                            (GetAsyncKeyState(0xA5i32) as u16 & 0x8000 != 0)
-                        };
-                        let shift_down = unsafe { GetAsyncKeyState(windows::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT.0 as i32) as u16 & 0x8000 != 0 };
-                        if win_down && !ctrl_down && !alt_down && !shift_down {
-                            crate::info!(">>> [DEBUG] Win+V Hook Trigger activated!");
-                            toggle_window(&app_handle);
-                            continue;
-                        }
-                    }
+                    // Win+V 的判定与吞键已经在键盘钩子回调里(按键发生的那一刻)完成,
+                    // 这里不再用 GetAsyncKeyState 复检:事件排到 worker 时用户可能已经松开 Win,
+                    // 复检失败会造成"按键被吞了却什么都没发生"。
 
                     // 1. Handle Recording Mode
                     if IS_RECORDING.load(Ordering::SeqCst) {
@@ -347,6 +366,11 @@ pub fn start_input_worker(app_handle: AppHandle, mut rx: tokio::sync::mpsc::Unbo
                         }
                     }
                 }
+                InputEvent::ToggleWindow { source } => {
+                    // 判定已在钩子回调里完成,这里只负责执行
+                    crate::info!(">>> [DEBUG] {} Hook Trigger activated!", source);
+                    toggle_window(&app_handle);
+                }
                 InputEvent::Mouse { msg, pt } => {
                     if msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN {
                         IS_MOUSE_BUTTON_DOWN.store(true, Ordering::SeqCst);
@@ -404,37 +428,69 @@ pub unsafe extern "system" fn keyboard_proc(n_code: i32, w_param: WPARAM, l_para
 
     if n_code >= 0 && (is_down || is_up) {
         let kbd_struct = *(l_param.0 as *const KBDLLHOOKSTRUCT);
-        
+
+        // 钩子看门狗心跳:任何键盘事件都说明钩子还活着
+        HOOK_LAST_EVENT_TICK.store(GetTickCount(), Ordering::Relaxed);
+
         // 检查是否是我们注入的重播按键（IME 重播机制）
         if kbd_struct.dwExtraInfo == 0x57494E50 {
             return CallNextHookEx(None, n_code, w_param, l_param);
         }
-        
+
+        let vk = kbd_struct.vkCode;
+
+        // 用事件流维护修饰键状态,而不是在判定处查实时键态:
+        // 钩子回调可能因为排队而延迟,届时 GetAsyncKeyState 已经反映不出按键发生时刻的状态。
+        if let Some(bit) = modifier_bit(vk) {
+            if is_down {
+                MODIFIER_STATE.fetch_or(bit, Ordering::Relaxed);
+                if bit == MODBIT_WIN {
+                    // Win 按下通常紧邻 Win+V:顺便用系统状态矫正其它修饰键,
+                    // 避免漏掉某个 up 事件后状态永久卡死。
+                    // 当前事件尚未反映到 GetAsyncKeyState,需要手工补回 Win 位。
+                    sync_modifier_state_from_os();
+                    MODIFIER_STATE.fetch_or(MODBIT_WIN, Ordering::Relaxed);
+                }
+            } else {
+                MODIFIER_STATE.fetch_and(!bit, Ordering::Relaxed);
+            }
+        }
+        let was_v_down = if vk == 0x56 {
+            V_KEY_DOWN.swap(is_down, Ordering::SeqCst)
+        } else {
+            false
+        };
+
         // Fast path: send to asynchronous channel and return
         if let Some(sender) = INPUT_SENDER.get() {
             let _ = sender.send(InputEvent::Keyboard {
-                vk_code: kbd_struct.vkCode,
+                vk_code: vk,
                 is_down,
             });
         }
 
-        let vk = kbd_struct.vkCode;
-
-        // Intercept Win+V if configured as the main hotkey to avoid OS register/hook fights and high CPU
+        // Intercept Win+V if configured as the main hotkey to avoid OS register/hook fights and high CPU.
+        // 判定与触发都在这里完成(按键发生的那一刻),worker 只负责执行。
         let is_win_v_configured = {
             let current = HOTKEY_STRING.lock().unwrap();
             is_win_v_hotkey(&current)
         };
 
         if is_win_v_configured && vk == 0x56 {
-            let win_down = (GetAsyncKeyState(VK_LWIN.0 as i32) as u16 & 0x8000 != 0) || (GetAsyncKeyState(VK_RWIN.0 as i32) as u16 & 0x8000 != 0);
-            // 仅拦截精确的 Win+V，避免 Alt+Win+V 等组合被吞掉而无法传递给系统
-            let ctrl_down = GetAsyncKeyState(VK_CONTROL.0 as i32) as u16 & 0x8000 != 0;
-            let alt_down = (GetAsyncKeyState(VK_MENU.0 as i32) as u16 & 0x8000 != 0)
-                || (GetAsyncKeyState(0xA4i32) as u16 & 0x8000 != 0)
-                || (GetAsyncKeyState(0xA5i32) as u16 & 0x8000 != 0);
-            let shift_down = GetAsyncKeyState(windows::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT.0 as i32) as u16 & 0x8000 != 0;
-            if win_down && !ctrl_down && !alt_down && !shift_down {
+            let mods = MODIFIER_STATE.load(Ordering::Relaxed);
+            let win_down = (mods & MODBIT_WIN) != 0 || live_key_down(0x5B) || live_key_down(0x5C);
+            // 仅识别精确的 Win+V,排除 Ctrl/Alt/Shift 同时按下(Alt+Win+V 等不吞)
+            let other_down = (mods & (MODBIT_CTRL | MODBIT_ALT | MODBIT_SHIFT)) != 0
+                || live_key_down(0x10) || live_key_down(0xA0) || live_key_down(0xA1)
+                || live_key_down(0x11) || live_key_down(0xA2) || live_key_down(0xA3)
+                || live_key_down(0x12) || live_key_down(0xA4) || live_key_down(0xA5);
+            if win_down && !other_down {
+                if is_down && !was_v_down {
+                    if let Some(sender) = INPUT_SENDER.get() {
+                        let _ = sender.send(InputEvent::ToggleWindow { source: "Win+V" });
+                    }
+                }
+                // down/up 与键盘自动重复全部吞掉,避免系统 Win+V(剪贴板历史)抢响应
                 return LRESULT(1);
             }
         }
@@ -509,6 +565,8 @@ pub unsafe extern "system" fn mouse_proc(n_code: i32, w_param: WPARAM, l_param: 
     if n_code >= 0 {
         let msg = w_param.0 as u32;
         let mouse_struct = *(l_param.0 as *const MSLLHOOKSTRUCT);
+        // 鼠标移动也会持续刷新,作为钩子存活的最强信号
+        HOOK_LAST_EVENT_TICK.store(GetTickCount(), Ordering::Relaxed);
 
         if let Some(sender) = INPUT_SENDER.get() {
             let _ = sender.send(InputEvent::Mouse {

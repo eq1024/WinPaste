@@ -8,9 +8,11 @@ use windows::Win32::System::Threading::{GetCurrentProcessId, OpenProcess, PROCES
 use windows::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClassNameW, GetForegroundWindow, GetWindowThreadProcessId,
-    IsWindowVisible, EVENT_SYSTEM_FOREGROUND, WINEVENT_OUTOFCONTEXT,
+    IsWindow, IsWindowVisible, EVENT_SYSTEM_FOREGROUND, WINEVENT_OUTOFCONTEXT,
 };
-use crate::global_state::LAST_ACTIVE_HWND;
+use crate::global_state::{
+    LAST_ACTIVE_HWND, RECENT_FOREGROUND_RING, RECENT_FOREGROUND_LEN, RECENT_FOREGROUND_HEAD,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct ActiveAppInfo {
@@ -84,8 +86,69 @@ pub fn get_active_app_info() -> ActiveAppInfo {
     }
 }
 
-pub fn get_clipboard_source_app_info() -> ActiveAppInfo {
+const RECENT_RING_CAP: usize = 8;
+
+/// 把一个前台窗口快照压入环形队列（最新在前回放）。相同值连续重复时忽略，
+/// 避免长时间停留在同一应用时把更早的候选顶出去。
+pub fn push_recent_foreground(hwnd_val: usize) {
+    if hwnd_val == 0 {
+        return;
+    }
+    let len = RECENT_FOREGROUND_LEN.load(Ordering::SeqCst) as usize;
+    let head = RECENT_FOREGROUND_HEAD.load(Ordering::SeqCst) as usize;
+    if len > 0 {
+        let top = (head + RECENT_RING_CAP - 1) % RECENT_RING_CAP;
+        if RECENT_FOREGROUND_RING[top].load(Ordering::SeqCst) == hwnd_val {
+            return;
+        }
+    }
+    let slot = (head + len) % RECENT_RING_CAP;
+    RECENT_FOREGROUND_RING[slot].store(hwnd_val, Ordering::SeqCst);
+    if len < RECENT_RING_CAP {
+        RECENT_FOREGROUND_LEN.store(len + 1, Ordering::SeqCst);
+    } else {
+        RECENT_FOREGROUND_HEAD.store((head + 1) % RECENT_RING_CAP, Ordering::SeqCst);
+    }
+}
+
+/// 按从新到旧的顺序回放最近前台窗口快照。
+pub fn recent_foreground_candidates() -> Vec<usize> {
+    let len = (RECENT_FOREGROUND_LEN.load(Ordering::SeqCst) as usize).min(RECENT_RING_CAP);
+    let head = RECENT_FOREGROUND_HEAD.load(Ordering::SeqCst) as usize;
+    let mut out = Vec::with_capacity(len);
+    for i in 0..len {
+        let idx = (head + len - 1 - i) % RECENT_RING_CAP;
+        let v = RECENT_FOREGROUND_RING[idx].load(Ordering::SeqCst);
+        if v != 0 {
+            out.push(v);
+        }
+    }
+    out
+}
+
+/// 粘贴目标有效性：非空、不是本进程窗口、不是任务栏/Shell、窗口仍存在且可见。
+pub fn is_valid_paste_target(hwnd_val: usize) -> bool {
+    if hwnd_val == 0 {
+        return false;
+    }
+    let hwnd = HWND(hwnd_val as *mut core::ffi::c_void);
     unsafe {
+        if hwnd.0.is_null() {
+            return false;
+        }
+        let mut process_id = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut process_id));
+        if process_id == 0 || process_id == GetCurrentProcessId() {
+            return false;
+        }
+        if is_system_focus_window(hwnd) {
+            return false;
+        }
+        IsWindow(Some(hwnd)).as_bool() && IsWindowVisible(hwnd).as_bool()
+    }
+}
+
+pub fn get_clipboard_source_app_info() -> ActiveAppInfo {    unsafe {
         if let Ok(owner_hwnd) = GetClipboardOwner() {
             if !owner_hwnd.0.is_null() && !is_own_process_window(owner_hwnd) {
                 if let Some(info) = resolve_app_info_from_hwnd(owner_hwnd) {
@@ -221,6 +284,7 @@ unsafe extern "system" fn event_hook_callback(
 
         // Only store valid user windows (this is the "Save" part)
         LAST_ACTIVE_HWND.store(hwnd.0 as usize, Ordering::SeqCst);
+        push_recent_foreground(hwnd.0 as usize);
         // println!("[DEBUG] Hook captured last focus HWND: {}", hwnd.0);
     }
 }

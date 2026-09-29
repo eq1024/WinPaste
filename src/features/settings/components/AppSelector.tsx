@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import Select from "react-select";
 import type { SingleValue } from "react-select";
 import type { InstalledAppOption } from "../../app/types";
+import { settingsSelectStyles } from "./settingsSelectStyles";
 
 const AppSelector = ({ type, installedApps, onSelect, theme: _theme, t, colorMode: _colorMode }: { type: string | null, installedApps: InstalledAppOption[], onSelect: (val: string) => void, theme: string, t: (key: string) => string, colorMode: string }) => {
     const [recommended, setRecommended] = useState<InstalledAppOption[]>([]);
@@ -118,59 +119,7 @@ const AppSelector = ({ type, installedApps, onSelect, theme: _theme, t, colorMod
             onChange={(option: SingleValue<InstalledAppOption>) => {
                 if (option) onSelect(option.value);
             }}
-            styles={{
-                control: (base, state) => ({
-                    ...base,
-                    background: 'var(--bg-input)',
-                    border: state.isFocused ? '1px solid var(--input-focus-border-color)' : 'var(--input-border)',
-                    borderRadius: 'var(--input-radius)',
-                    boxShadow: state.isFocused ? 'var(--input-focus-shadow)' : 'none',
-                    minHeight: '32px',
-                    '&:hover': {
-                        border: state.isFocused ? '1px solid var(--input-focus-border-color)' : '1px solid var(--border-dark)',
-                    }
-                }),
-                menuPortal: (base) => ({
-                    ...base,
-                    zIndex: 99999,
-                }),
-                menu: (base) => ({
-                    ...base,
-                    background: 'var(--bg-panel)',
-                    borderRadius: 'var(--panel-radius)',
-                    border: 'var(--panel-border)',
-                    backdropFilter: 'blur(12px)',
-                    marginTop: '4px',
-                    zIndex: 99999,
-                    boxShadow: 'var(--panel-shadow)',
-                    maxHeight: '300px',
-                }),
-                menuList: (base) => ({
-                    ...base,
-                    maxHeight: '280px',
-                    overflowY: 'auto',
-                }),
-                option: (base, state) => ({
-                    ...base,
-                    background: state.isFocused ? 'var(--accent-color)' : 'transparent',
-                    color: state.isFocused ? 'var(--button-active-filled-color, #fff)' : 'var(--text-primary)',
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                    fontSize: '12px'
-                }),
-                groupHeading: (base) => ({
-                    ...base,
-                    color: 'var(--text-secondary)',
-                    fontWeight: 'bold',
-                    fontSize: '11px',
-                    textTransform: 'uppercase',
-                    borderBottom: '1px solid var(--panel-divider-color)',
-                    marginBottom: '4px'
-                }),
-                placeholder: (base) => ({ ...base, fontSize: '12px', color: 'var(--text-muted)' }),
-                input: (base) => ({ ...base, color: 'var(--text-primary)' }),
-                singleValue: (base) => ({ ...base, color: 'var(--text-primary)' })
-            }}
+            styles={settingsSelectStyles}
         />
     );
 };

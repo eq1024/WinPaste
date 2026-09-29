@@ -234,6 +234,35 @@
   background: var(--data-panel-hover-background);
 }
 
+/* react-select based dropdowns (粘贴方案等): keep them compact and aligned
+   with the switches on the right side of a setting row. */
+.setting-item .settings-select {
+  width: 128px;
+  min-width: 128px;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.setting-item .settings-select .settings-select__control {
+  cursor: pointer;
+  min-height: 32px;
+  flex-wrap: nowrap;
+}
+
+.setting-item .settings-select .settings-select__value-container {
+  padding: 0 6px;
+  overflow: hidden;
+}
+
+.setting-item .settings-select .settings-select__single-value,
+.setting-item .settings-select .settings-select__placeholder,
+.setting-item .settings-select .settings-select__input-container {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .setting-item .switch {
   margin-left: 12px;
   flex-shrink: 0;
