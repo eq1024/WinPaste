@@ -492,11 +492,13 @@ class CompactPreviewController {
             // 旧流程若继续往下走,置顶请求会把刚隐藏的预览窗再次带回桌面(#54)。
             if (generation !== this.generation || !this.pending) {
                 this.setIgnoreBlur(false);
+                await this.hideIfPanelHidden();
                 return;
             }
             try { await previewWindow.setSize(new PhysicalSize(size.width, size.height)); } catch {}
             if (generation !== this.generation || !this.pending) {
                 this.setIgnoreBlur(false);
+                await this.hideIfPanelHidden();
                 return;
             }
             // 关键:每次显示后无条件抬升,否则会被主面板(每次显示都抢先置顶)压住
@@ -504,6 +506,26 @@ class CompactPreviewController {
         } catch (err) {
             this.setIgnoreBlur(false);
             throw err;
+        }
+    }
+
+    /**
+     * #54:show()/setSize() 落地之后才发现流程已过期时,预览窗可能刚好是在
+     * hide() 之后才被 show() 拉起来的 —— 它成了桌面上唯一可见的窗口。
+     *
+     * 光看"过期"无法判断能不能关:上次修复因此选择不动它(怕误伤接管它的
+     * 新流程)。但"主面板是否可见"可以作为判据 —— 悬停预览的前提就是面板
+     * 可见,面板都不可见了不可能有新的预览流程启动,所以此时关掉绝不会
+     * 打断别人。真正接管流程的新情况也会在面板可见时才继续,不受影响。
+     */
+    private async hideIfPanelHidden(): Promise<void> {
+        try {
+            const panelVisible = await getCurrentWindow().isVisible();
+            if (panelVisible) return;
+            const previewWindow = this.window;
+            if (previewWindow) await previewWindow.hide();
+        } catch {
+            // 面板可见性查不到就保持原样:大不了残留一次,不要在正常路径上加风险
         }
     }
 

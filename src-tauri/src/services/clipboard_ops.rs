@@ -306,6 +306,58 @@ async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle) -> AppResu
     Ok(())
 }
 
+/// 焦点恢复的挂起预算。正常情况下整段同步 Win32 调用在毫秒级完成，500ms
+/// 足够覆盖"目标应用正忙但仍会恢复"的常见情形；超过就判定对方线程不响应。
+const FOCUS_RESTORE_BUDGET_MS: u64 = 500;
+
+/// 强制把目标窗口设为前台：虚拟 Alt 绕过 ForegroundLockTimeout → 输入附加 →
+/// SetForegroundWindow → 恢复/置顶 → 解除附加。
+///
+/// ⚠️ **必须在专用线程里调用**（见 `restore_focus_before_paste` 的熔断）：
+/// AttachThreadInput 之后这些调用会对前台/目标线程的输入队列发起同步等待，
+/// 对方线程不抽消息时永久挂起，且无法从外部中断或取消。挂起的后果由调用方的
+/// 超时熔断承担——放弃焦点恢复，而不是让整条粘贴流程陪葬。
+#[cfg(target_os = "windows")]
+unsafe fn force_foreground_sync(fg_raw: usize, target_raw: usize) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{keybd_event, KEYEVENTF_KEYUP};
+
+    let fg_hwnd = HWND(fg_raw as _);
+    let target_hwnd = HWND(target_raw as _);
+
+    // 1. 发送一次虚拟的 Alt 键按下来绕过 ForegroundLockTimeout 限制
+    keybd_event(windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU.0 as u8, 0, windows::Win32::UI::Input::KeyboardAndMouse::KEYBD_EVENT_FLAGS(0), 0);
+    keybd_event(windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU.0 as u8, 0, KEYEVENTF_KEYUP, 0);
+
+    // 2. 将本线程与前台线程进行输入附加，赋予本线程前台特权
+    let current_thread_id = windows::Win32::System::Threading::GetCurrentThreadId();
+    let fg_thread_id = GetWindowThreadProcessId(fg_hwnd, None);
+    let target_thread_id = GetWindowThreadProcessId(target_hwnd, None);
+
+    let attached_to_fg = if current_thread_id != fg_thread_id && fg_thread_id != 0 {
+        windows::Win32::System::Threading::AttachThreadInput(current_thread_id, fg_thread_id, true).as_bool()
+    } else { false };
+
+    let attached_to_target = if fg_thread_id != target_thread_id && target_thread_id != 0 {
+        windows::Win32::System::Threading::AttachThreadInput(fg_thread_id, target_thread_id, true).as_bool()
+    } else { false };
+
+    let _ = SetForegroundWindow(target_hwnd);
+
+    if IsIconic(target_hwnd).as_bool() {
+        let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(target_hwnd, windows::Win32::UI::WindowsAndMessaging::SW_RESTORE);
+    }
+    let _ = windows::Win32::UI::WindowsAndMessaging::BringWindowToTop(target_hwnd);
+
+    if attached_to_target {
+        let _ = windows::Win32::System::Threading::AttachThreadInput(fg_thread_id, target_thread_id, false);
+    }
+    if attached_to_fg {
+        let _ = windows::Win32::System::Threading::AttachThreadInput(current_thread_id, fg_thread_id, false);
+    }
+
+    crate::info!("[DEBUG] Tried to set foreground. Attached to FG: {}, Attached to Target: {}", attached_to_fg, attached_to_target);
+}
+
 async fn restore_focus_before_paste(_app_handle: &tauri::AppHandle) -> AppResult<()> {
     // 候选目标按从新到旧排序：LAST_ACTIVE_HWND 优先，再回退到最近前台快照
     // 环形队列。旧实现只认单个 HWND，一旦目标窗口已关闭/最小化就直接放弃，
@@ -330,7 +382,11 @@ async fn restore_focus_before_paste(_app_handle: &tauri::AppHandle) -> AppResult
         use crate::infrastructure::windows_ext::WindowExt;
 
         let target_hwnd = HWND(target_val as _);
-        unsafe {
+        // 跨 .await 的部分一律传 usize：HWND 内含裸指针不是 Send，带着它 await
+        // 会让整个 command future 变成 non-Send，tauri::async_runtime::spawn 直接拒绝。
+        let target_raw = target_hwnd.0 as usize;
+        // unsafe 作用域收到最小：只包这两个无副作用的查询调用。
+        let fg_raw = unsafe {
             if !IsWindowVisible(target_hwnd).as_bool() {
                  crate::info!("[WARN] Target window is no longer visible.");
                  return Err(AppError::Internal("Target window is no longer visible".to_string()));
@@ -338,50 +394,62 @@ async fn restore_focus_before_paste(_app_handle: &tauri::AppHandle) -> AppResult
 
             let fg_hwnd = GetForegroundWindow();
             crate::info!("[DEBUG] Before SetForegroundWindow, Current Foreground is {:?}", fg_hwnd.0 as usize);
-            
-            if fg_hwnd.0 != target_hwnd.0 {
-                use windows::Win32::UI::Input::KeyboardAndMouse::{keybd_event, KEYEVENTF_KEYUP};
-                
-                // 1. 发送一次虚拟的 Alt 键按下来绕过 ForegroundLockTimeout 限制
-                keybd_event(windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU.0 as u8, 0, windows::Win32::UI::Input::KeyboardAndMouse::KEYBD_EVENT_FLAGS(0), 0);
-                keybd_event(windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU.0 as u8, 0, KEYEVENTF_KEYUP, 0);
+            fg_hwnd.0 as usize
+        };
 
-                // 2. 将当前 Tokio 后台工作线程与前台线程进行输入附加，赋予当前线程前台特权
-                let current_thread_id = windows::Win32::System::Threading::GetCurrentThreadId();
-                let fg_thread_id = GetWindowThreadProcessId(fg_hwnd, None);
-                let target_thread_id = GetWindowThreadProcessId(target_hwnd, None);
+        if fg_raw != target_raw {
+            // 熔断（#53）：整段同步 Win32 调用交给专用线程，主流程只等
+            // FOCUS_RESTORE_BUDGET_MS。对方线程不响应时挂起的是这条
+            // "牺牲品"线程——它不占 tokio worker，粘贴命令照常返回，
+            // 前端 pasteBusyRef 不会被永久占死，后续点击继续可用。
+            let finished = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let finished_worker = finished.clone();
 
-                let attached_to_fg = if current_thread_id != fg_thread_id && fg_thread_id != 0 {
-                    windows::Win32::System::Threading::AttachThreadInput(current_thread_id, fg_thread_id, true).as_bool()
-                } else { false };
+            let spawned = std::thread::Builder::new()
+                .name("winpaste-focus-restore".to_string())
+                .spawn(move || {
+                    unsafe { force_foreground_sync(fg_raw, target_raw) };
+                    finished_worker.store(true, std::sync::atomic::Ordering::SeqCst);
+                });
 
-                let attached_to_target = if fg_thread_id != target_thread_id && target_thread_id != 0 {
-                    windows::Win32::System::Threading::AttachThreadInput(fg_thread_id, target_thread_id, true).as_bool()
-                } else { false };
-
-                let _ = SetForegroundWindow(target_hwnd);
-                
-                if IsIconic(target_hwnd).as_bool() {
-                    let _ = windows::Win32::UI::WindowsAndMessaging::ShowWindow(target_hwnd, windows::Win32::UI::WindowsAndMessaging::SW_RESTORE);
+            let finished_in_time = match spawned {
+                Ok(_) => {
+                    let deadline = std::time::Instant::now()
+                        + std::time::Duration::from_millis(FOCUS_RESTORE_BUDGET_MS);
+                    loop {
+                        if finished.load(std::sync::atomic::Ordering::SeqCst) {
+                            break true;
+                        }
+                        if std::time::Instant::now() >= deadline {
+                            break false;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                    }
                 }
-                let _ = windows::Win32::UI::WindowsAndMessaging::BringWindowToTop(target_hwnd);
-                
-                if attached_to_target {
-                    let _ = windows::Win32::System::Threading::AttachThreadInput(fg_thread_id, target_thread_id, false);
+                Err(err) => {
+                    crate::error!("[ERROR] Failed to spawn focus-restore worker: {}", err);
+                    false
                 }
-                if attached_to_fg {
-                    let _ = windows::Win32::System::Threading::AttachThreadInput(current_thread_id, fg_thread_id, false);
-                }
-                
-                crate::info!("[DEBUG] Tried to set foreground. Attached to FG: {}, Attached to Target: {}", attached_to_fg, attached_to_target);
-            } else {
-                crate::info!("[DEBUG] Target window is already the foreground window.");
+            };
+
+            if !finished_in_time {
+                crate::error!(
+                    "[ERROR] Focus restore did not finish within {}ms — target window is not \
+                     responding. Giving up so this paste can still complete; the clipboard is \
+                     already filled, so the user can paste manually with Ctrl+V.",
+                    FOCUS_RESTORE_BUDGET_MS
+                );
+                return Err(AppError::Internal(
+                    "Focus restore timed out (target window not responding)".to_string(),
+                ));
             }
+        } else {
+            crate::info!("[DEBUG] Target window is already the foreground window.");
         }
 
         // Wait for focus with polling instead of blind sleep
-        crate::info!("[DEBUG] Waiting for focus to settle on target window {:?}...", target_hwnd.0 as usize);
-        if !WindowExt::wait_for_focus_raw(target_hwnd.0 as usize, 300).await {
+        crate::info!("[DEBUG] Waiting for focus to settle on target window {:?}...", target_raw);
+        if !WindowExt::wait_for_focus_raw(target_raw, 300).await {
             unsafe {
                 let current_fg = GetForegroundWindow();
                 crate::info!("[WARN] Failed to confirm focus on target window after 300ms. Current Foreground is actually {:?}", current_fg.0 as usize);

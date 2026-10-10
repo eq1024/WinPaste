@@ -73,19 +73,30 @@ pub fn toggle_clipboard_pin(
 #[tauri::command]
 pub fn update_tags(app_handle: AppHandle, state: State<'_, DbState>, session: State<'_, SessionHistory>, app_data_dir: State<'_, AppDataDir>, id: i64, tags: Vec<String>) -> AppResult<i64> {
     if id < 0 {
-        let mut session_items = session.inner().0.lock().unwrap();
-        if let Some(index) = session_items.iter().position(|item| item.id == id) {
-             let mut item = session_items[index].clone();
-             item.tags = tags.clone();
-             
-             let data_dir = app_data_dir.0.lock().unwrap().clone();
-             let new_id = state.repo.save(&item, Some(&data_dir))?;
-             
-             session_items[index].id = new_id;
-             session_items[index].tags = tags;
-             return Ok(new_id);
+        // 锁内只取快照,不碰数据库:持有 session 锁期间访问 DB 会与
+        // pipeline.rs 的锁序(DB → Session)相反,并发时形成 ABBA 死锁(#53)。
+        let snapshot = {
+            let session_items = session.inner().0.lock().unwrap();
+            let Some(index) = session_items.iter().position(|item| item.id == id) else {
+                return Err(AppError::Validation("Item not found".to_string()));
+            };
+            let mut item = session_items[index].clone();
+            item.tags = tags;
+            item
+        };
+
+        let data_dir = app_data_dir.0.lock().unwrap().clone();
+        let new_id = state.repo.save(&snapshot, Some(&data_dir))?;
+
+        // 短暂重拿锁回写;期间条目若已被清空则跳过(记录已在库中)
+        {
+            let mut session_items = session.inner().0.lock().unwrap();
+            if let Some(item) = session_items.iter_mut().find(|i| i.id == id) {
+                item.id = new_id;
+                item.tags = snapshot.tags;
+            }
         }
-        return Err(AppError::Validation("Item not found".to_string()));
+        return Ok(new_id);
     }
 
     let old_sensitive = {

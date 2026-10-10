@@ -29,4 +29,8 @@ Thumbs.db
 # Local AI assistant session memory (not part of the product)
 .workbuddy/
 
+# Local one-off diagnostic tools (e.g. tools/winprobe — window residue probe).
+# Kept locally for debugging; not part of the shipped product or its history.
+tools/
+
 TODO.md

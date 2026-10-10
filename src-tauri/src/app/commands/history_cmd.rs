@@ -550,7 +550,9 @@ pub fn create_new_tag(state: State<'_, DbState>, tag_name: String) -> AppResult<
 }
 
 #[tauri::command]
-pub fn get_clipboard_content(
+// async:同步 command 跑在主线程,悬停补取内容时若共享 DB 锁被长操作
+// 占用,整个面板会冻结(#53);挪到异步运行时后只影响单次预览。
+pub async fn get_clipboard_content(
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
     id: i64,

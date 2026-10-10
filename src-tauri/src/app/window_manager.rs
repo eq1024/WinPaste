@@ -368,6 +368,10 @@ pub fn rebuild_main_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     Some(window)
 }
 
+/// 悬停预览窗的 window label(前端 `PREVIEW_WINDOW_LABEL` 必须与之一致)。
+/// 统一成常量:置顶收尾命令要靠它判断"该不该把预览窗收掉" (#54)。
+pub const COMPACT_PREVIEW_LABEL: &str = "compact-preview";
+
 /// Destroy transient panel-UI webview windows (currently only `compact-preview`).
 /// The compact preview is an independent WebviewWindow that, once created, is
 /// only ever hidden — never destroyed — so it survives `main` and keeps a
@@ -378,7 +382,7 @@ pub fn rebuild_main_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
 /// content pinned to the desktop and must survive lightweight mode.
 fn destroy_transient_windows(app: &AppHandle) {
     for (label, window) in app.webview_windows() {
-        if label == "compact-preview" {
+        if label == COMPACT_PREVIEW_LABEL {
             crate::info!("[lightweight] destroying residual window: {}", label);
             let _ = window.destroy();
         }
@@ -406,7 +410,7 @@ pub fn destroy_main_window(app: &AppHandle) {
 /// 与 placeAndShow 的异步尾部(show/setSize/置顶)存在竞态,偶尔会让预览
 /// 残留在桌面上(#54)。后端在隐藏主面板时同步隐藏一次预览,双保险。
 pub fn hide_compact_preview(app: &AppHandle) {
-    if let Some(preview) = app.get_webview_window("compact-preview") {
+    if let Some(preview) = app.get_webview_window(COMPACT_PREVIEW_LABEL) {
         let _ = preview.hide();
     }
 }

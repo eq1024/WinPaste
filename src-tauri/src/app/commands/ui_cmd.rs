@@ -81,6 +81,27 @@ pub fn raise_window_topmost(app: AppHandle, label: String) -> AppResult<()> {
             if !IsWindowVisible(hwnd).as_bool() {
                 return Ok(());
             }
+
+            // #54 的最后一道闸:主面板不可见时,预览窗不该是桌面上唯一可见的
+            // 窗口。后端发起的隐藏(粘贴/ESC/点面板外/托盘)不会让前端 generation
+            // 失效 —— 于是在途的 show() 落在 hide() 之后时,前端三道检查全都通过,
+            // 置顶请求反而把残留的预览窗永久抬在桌面最上层。前端那条"过期也不
+            // 隐藏"的路径收不到这里(它在 raise 之前就 return 了),所以两边都要管。
+            if label == crate::app::window_manager::COMPACT_PREVIEW_LABEL {
+                let main_visible = match app.get_webview_window("main") {
+                    Some(main) => match main.hwnd() {
+                        Ok(h) => IsWindowVisible(HWND(h.0 as _)).as_bool(),
+                        Err(_) => false,
+                    },
+                    None => false,
+                };
+                if !main_visible {
+                    let _ = window.hide();
+                    crate::info!("[DEBUG] Main panel not visible -> hid leftover compact preview (#54)");
+                    return Ok(());
+                }
+            }
+
             // HWND_NOTOPMOST → HWND_TOPMOST 是 Windows 上"重新置顶但不激活"的经典做法:
             // 只调一次 HWND_TOPMOST 时,若窗口已在 topmost 带内,并不会重新排到带顶。
             // 注意:绝不带 SWP_SHOWWINDOW —— 本命令只调整 Z 序,不改变可见性。
