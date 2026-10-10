@@ -1053,6 +1053,8 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                 return;
             }
             api.prevent_close();
+            // 主面板关闭时同步隐藏悬停预览窗,避免预览残留桌面(#54)
+            crate::app::window_manager::hide_compact_preview(&window.app_handle());
             let _ = window.hide();
             let _ = window.app_handle().emit("window-hidden", ());
             NAVIGATION_ENABLED.store(false, Ordering::SeqCst);

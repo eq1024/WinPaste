@@ -64,8 +64,8 @@ pub fn raise_window_topmost(app: AppHandle, label: String) -> AppResult<()> {
     {
         use windows::Win32::Foundation::HWND;
         use windows::Win32::UI::WindowsAndMessaging::{
-            SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-            SWP_SHOWWINDOW,
+            IsWindowVisible, SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE,
+            SWP_NOMOVE, SWP_NOSIZE,
         };
 
         let window = app
@@ -74,10 +74,18 @@ pub fn raise_window_topmost(app: AppHandle, label: String) -> AppResult<()> {
         let hwnd_raw = window.hwnd().map_err(|e| AppError::Internal(e.to_string()))?;
         let hwnd = HWND(hwnd_raw.0 as _);
         unsafe {
+            // 已隐藏的窗口直接跳过:对它置顶毫无意义。更重要的是,窗口命令走 tao
+            // 事件循环、本命令走异步运行时,二者无顺序保证 —— 前端刚 hide() 完,
+            // 一个滞后的置顶请求仍可能到达这里。若此处带任何强制显示标志
+            // (如 SWP_SHOWWINDOW),就会把刚隐藏的预览窗"复活"到桌面(#54)。
+            if !IsWindowVisible(hwnd).as_bool() {
+                return Ok(());
+            }
             // HWND_NOTOPMOST → HWND_TOPMOST 是 Windows 上"重新置顶但不激活"的经典做法:
             // 只调一次 HWND_TOPMOST 时,若窗口已在 topmost 带内,并不会重新排到带顶。
+            // 注意:绝不带 SWP_SHOWWINDOW —— 本命令只调整 Z 序,不改变可见性。
             let _ = SetWindowPos(hwnd, Some(HWND_NOTOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-            let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+            let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
         Ok(())
     }

@@ -11,6 +11,9 @@ dist/
 src-tauri/target/
 target-codex-*/
 
+# Release artifacts (portable zip etc.)
+artifacts/
+
 # Runtime files
 *.db
 *.log

@@ -286,6 +286,8 @@ async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle) -> AppResu
     } else {
         // 在非置顶模式下，直接隐藏窗口
         if let Some(window) = app_handle.get_webview_window("main") {
+            // 鼠标此刻往往还悬停在条目上,预览窗可能正在显示,必须一起隐藏(#54)
+            crate::app::window_manager::hide_compact_preview(app_handle);
             let _ = window.hide();
             crate::IS_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
             crate::app::window_manager::release_win_keys();
@@ -847,6 +849,8 @@ async fn hide_window_after_paste(app_handle: &tauri::AppHandle) {
     }
 
     if let Some(window) = app_handle.get_webview_window("main") {
+        // 粘贴后隐藏主面板时,悬停预览窗一起隐藏,避免残留桌面(#54)
+        crate::app::window_manager::hide_compact_preview(app_handle);
         let _ = window.set_focusable(false);
         let _ = window.hide();
         let _ = app_handle.emit("window-hidden", ());

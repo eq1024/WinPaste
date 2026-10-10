@@ -488,7 +488,17 @@ class CompactPreviewController {
                 return;
             }
             await previewWindow.show();
+            // show()/setSize() 的每个异步间隙都可能插入 hide()(主面板关闭/鼠标离开)。
+            // 旧流程若继续往下走,置顶请求会把刚隐藏的预览窗再次带回桌面(#54)。
+            if (generation !== this.generation || !this.pending) {
+                this.setIgnoreBlur(false);
+                return;
+            }
             try { await previewWindow.setSize(new PhysicalSize(size.width, size.height)); } catch {}
+            if (generation !== this.generation || !this.pending) {
+                this.setIgnoreBlur(false);
+                return;
+            }
             // 关键:每次显示后无条件抬升,否则会被主面板(每次显示都抢先置顶)压住
             await raisePreviewWindowTopmost();
         } catch (err) {

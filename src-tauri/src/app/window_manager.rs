@@ -401,6 +401,16 @@ pub fn destroy_main_window(app: &AppHandle) {
     let _ = app.emit("window-hidden", ());
 }
 
+/// 主面板隐藏路径的后端兜底:直接隐藏悬停预览窗。
+/// 前端 compactPreviewController 依赖 `window-hidden` 事件异步执行 hide(),
+/// 与 placeAndShow 的异步尾部(show/setSize/置顶)存在竞态,偶尔会让预览
+/// 残留在桌面上(#54)。后端在隐藏主面板时同步隐藏一次预览,双保险。
+pub fn hide_compact_preview(app: &AppHandle) {
+    if let Some(preview) = app.get_webview_window("compact-preview") {
+        let _ = preview.hide();
+    }
+}
+
 /// Hide the main window; in lightweight mode destroy it instead so the webview is released.
 pub fn hide_main_window_or_destroy(app: &AppHandle, restore_focus: bool) {
     let lightweight = app.state::<SettingsState>().lightweight_mode.load(Ordering::Relaxed);
@@ -408,6 +418,9 @@ pub fn hide_main_window_or_destroy(app: &AppHandle, restore_focus: bool) {
         destroy_main_window(app);
         return;
     }
+
+    // 兜底:主面板隐藏时预览窗必须一起消失,不能只依赖前端事件监听(#54)。
+    hide_compact_preview(app);
 
     if let Some(window) = app.get_webview_window("main") {
         #[cfg(target_os = "windows")]
