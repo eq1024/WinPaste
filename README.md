@@ -61,12 +61,17 @@
 ## 🛠 开发
 
 ```bash
-# 前置：Node.js 18+、Rust、Tauri CLI
+# 前置：Node.js 20.19+（或 22.12+）、Rust、Tauri CLI
 
 npm install
 npm run tauri:dev      # 开发模式，热重载 (Vite 端口 1422)
-npm run tauri:build    # 生产构建 (NSIS 安装包)
-npm run build:portable # 便携版构建
+npm run tauri:build    # 一键构建：安装版 + 单文件版
+npm run build:installer # 仅构建 NSIS 安装包
+npm run build:portable # 仅构建便携单文件 exe (zip + exe)
+
+# 一键构建产物：
+# artifacts/release/WinPaste_<版本>_x64-setup.exe    安装版
+# artifacts/release/WinPaste_<版本>_x64-portable.exe 单文件版
 
 # 仅检查
 npx tsc --noEmit       # TypeScript 类型检查
@@ -86,7 +91,7 @@ npm run test:e2e       # Playwright e2e 测试
 | 加密 | Windows DPAPI + AES |
 | 输入 | `WH_KEYBOARD_LL` / `WH_MOUSE_LL` 底层钩子 |
 | 光标定位 | UIAutomation 接口（兼容 Chrome、VSCode、Electron） |
-| 打包 | NSIS 安装包 |
+| 打包 | NSIS 安装包 + 便携单文件 exe |
 
 **关键架构决策：**
 - **`WS_EX_NOACTIVATE`** 窗口样式——面板弹出不抢焦点

@@ -10,8 +10,10 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build",
-    "build:portable": "tauri build --no-bundle --features portable && powershell -NoProfile -Command \"$ErrorActionPreference='Stop'; $out='artifacts/portable'; New-Item -ItemType Directory -Force -Path $out | Out-Null; Get-ChildItem 'src-tauri/target/release' -Filter *.exe | Copy-Item -Destination $out -Force; Compress-Archive -Path (Join-Path $out '*') -DestinationPath (Join-Path $out 'winpaste-portable.zip') -Force\""
+    "tauri:build": "npm run build:all",
+    "build:installer": "tauri build",
+    "build:portable": "tauri build --no-bundle --features portable && powershell -NoProfile -Command \"$ErrorActionPreference='Stop'; $out='artifacts/portable'; New-Item -ItemType Directory -Force -Path $out | Out-Null; Get-ChildItem 'src-tauri/target/release' -Filter *.exe | Copy-Item -Destination $out -Force; Compress-Archive -Path (Join-Path $out '*') -DestinationPath (Join-Path $out 'winpaste-portable.zip') -Force\"",
+    "build:all": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
